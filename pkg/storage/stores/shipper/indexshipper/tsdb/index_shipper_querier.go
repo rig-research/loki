@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/storage/chunk"
 	"github.com/grafana/loki/v3/pkg/storage/config"
 	shipperindex "github.com/grafana/loki/v3/pkg/storage/stores/shipper/indexshipper/index"
@@ -40,9 +41,9 @@ func (i indexIterFunc) For(_ context.Context, _ int, f func(context.Context, Ind
 func (i *indexShipperQuerier) indices(ctx context.Context, from, through model.Time, user string) (Index, error) {
 	itr := indexIterFunc(func(f func(context.Context, Index) error) error {
 		// Ensure we query both per tenant and multitenant TSDBs
-		idxBuckets := indexBuckets(from, through, []config.TableRange{i.tableRange})
+		idxBuckets := IndexBuckets(from, through, []config.TableRange{i.tableRange})
 		for _, bkt := range idxBuckets {
-			if err := i.shipper.ForEachConcurrent(ctx, bkt.prefix, user, func(multitenant bool, idx shipperindex.Index) error {
+			if err := i.shipper.ForEachConcurrent(ctx, bkt.Prefix, user, func(multitenant bool, idx shipperindex.Index) error {
 				impl, ok := idx.(Index)
 				if !ok {
 					return fmt.Errorf("unexpected shipper index type: %T", idx)
@@ -84,7 +85,7 @@ func (i *indexShipperQuerier) Close() error {
 	return nil
 }
 
-func (i *indexShipperQuerier) GetChunkRefs(ctx context.Context, userID string, from, through model.Time, res []ChunkRef, fpFilter tsdbindex.FingerprintFilter, matchers ...*labels.Matcher) ([]ChunkRef, error) {
+func (i *indexShipperQuerier) GetChunkRefs(ctx context.Context, userID string, from, through model.Time, res []logproto.ChunkRefWithSizingInfo, fpFilter tsdbindex.FingerprintFilter, matchers ...*labels.Matcher) ([]logproto.ChunkRefWithSizingInfo, error) {
 	idx, err := i.indices(ctx, from, through, userID)
 	if err != nil {
 		return nil, err

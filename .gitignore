@@ -5,7 +5,7 @@
 *.output
 *.tgz
 *.exe
-__debug_bin
+__debug_bin*
 requirements.lock
 mixin/vendor/
 cmd/loki/loki
@@ -28,17 +28,20 @@ cmd/querytee/querytee
 dlv
 rootfs/
 dist
+!pkg/dataobj/explorer/dist
+!pkg/ui/frontend/dist
 *coverage.txt
 *test_results.txt
 .DS_Store
 .aws-sam
 .idea
 pkg/loki/wal
-tools/lambda-promtail/main
+tools/dev/kafka/data/
+pkg/ui/frontend/node_modules/*
+pkg/ui/frontend/.vite/*
 
-# Workspaces
-*.work
-*.work.sum
+# Submodule added by `act` CLI
+_shared-workflows-dockerhub-login
 
 # emacs
 .#*
@@ -50,6 +53,7 @@ tools/lambda-promtail/main
 
 # vscode
 .vscode
+!.vscode/launch.json
 
 # nix
 nix/result
@@ -63,3 +67,13 @@ production/helm/loki/src/helm-test/helm-test
 
 # Go telemetry
 .config
+
+# Profiling files
+*.prof
+cpu.prof
+mem.prof
+*.pprof
+
+**/.claude/settings.local.json
+
+host-*.json

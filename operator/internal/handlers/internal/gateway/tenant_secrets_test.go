@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	lokiv1 "github.com/grafana/loki/operator/apis/loki/v1"
+	lokiv1 "github.com/grafana/loki/operator/api/loki/v1"
 	"github.com/grafana/loki/operator/internal/external/k8s/k8sfakes"
 	"github.com/grafana/loki/operator/internal/manifests"
 )
@@ -23,6 +23,7 @@ func TestGetTenantSecrets(t *testing.T) {
 			authNSpec []lokiv1.AuthenticationSpec
 			object    client.Object
 			expected  []*manifests.TenantSecrets
+			errorMsg  string
 		}{
 			{
 				name: "oidc",
@@ -89,12 +90,34 @@ func TestGetTenantSecrets(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "mTLS missing cm",
+				authNSpec: []lokiv1.AuthenticationSpec{
+					{
+						TenantName: "test",
+						TenantID:   "test",
+						MTLS: &lokiv1.MTLSSpec{
+							CA: &lokiv1.CASpec{
+								CA:    "test",
+								CAKey: "special-ca.crt",
+							},
+						},
+					},
+				},
+				object: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "not-ca-bundle",
+						Namespace: "some-ns",
+					},
+				},
+				errorMsg: "cluster degraded: Invalid contents of ConfigMap for tenant \"test\". Can not find CA bundle with key: special-ca.crt",
+			},
 		} {
 			t.Run(strings.Join([]string{string(mode), tc.name}, "_"), func(t *testing.T) {
 				k := &k8sfakes.FakeClient{}
 				s := &lokiv1.LokiStack{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "mystack",
+						Name:      "test",
 						Namespace: "some-ns",
 					},
 					Spec: lokiv1.LokiStackSpec{
@@ -112,8 +135,13 @@ func TestGetTenantSecrets(t *testing.T) {
 					return nil
 				}
 				ts, err := getTenantSecrets(context.TODO(), k, s)
-				require.NoError(t, err)
-				require.ElementsMatch(t, ts, tc.expected)
+				if tc.errorMsg != "" {
+					require.Error(t, err)
+					require.Equal(t, tc.errorMsg, err.Error())
+				} else {
+					require.NoError(t, err)
+					require.ElementsMatch(t, ts, tc.expected)
+				}
 			})
 		}
 	}

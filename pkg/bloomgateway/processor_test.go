@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -117,8 +116,8 @@ func (s *dummyStore) FetchBlocks(_ context.Context, refs []bloomshipper.BlockRef
 
 func TestProcessor(t *testing.T) {
 	ctx := context.Background()
-	sp, ctx := opentracing.StartSpanFromContext(ctx, "TestProcessor")
-	t.Cleanup(sp.Finish)
+	ctx, sp := tracer.Start(ctx, "TestProcessor")
+	t.Cleanup(func() { sp.End() })
 
 	tenant := "fake"
 	now := mktime("2024-01-27 12:00")
@@ -128,7 +127,7 @@ func TestProcessor(t *testing.T) {
 		refs, metas, queriers, data := createBlocks(t, tenant, 10, now.Add(-1*time.Hour), now, 0x0000, 0x0fff)
 
 		mockStore := newMockBloomStore(refs, queriers, metas)
-		p := newProcessor("worker", 1, mockStore, log.NewNopLogger(), metrics)
+		p := newProcessor("worker", 1, false, mockStore, log.NewNopLogger(), metrics)
 
 		chunkRefs := createQueryInputFromBlockData(t, tenant, data, 10)
 		swb := seriesWithInterval{
@@ -141,7 +140,7 @@ func TestProcessor(t *testing.T) {
 		}
 
 		matchers := []v1.LabelMatcher{
-			v1.PlainLabelMatcher{
+			v1.KeyValueMatcher{
 				Key:   "trace_id",
 				Value: "nomatch",
 			},
@@ -179,7 +178,7 @@ func TestProcessor(t *testing.T) {
 		}
 
 		mockStore := newMockBloomStore(refs, queriers, metas)
-		p := newProcessor("worker", 1, mockStore, log.NewNopLogger(), metrics)
+		p := newProcessor("worker", 1, false, mockStore, log.NewNopLogger(), metrics)
 
 		chunkRefs := createQueryInputFromBlockData(t, tenant, data, 10)
 		swb := seriesWithInterval{
@@ -191,7 +190,7 @@ func TestProcessor(t *testing.T) {
 			day: config.NewDayTime(truncateDay(now)),
 		}
 		matchers := []v1.LabelMatcher{
-			v1.PlainLabelMatcher{
+			v1.KeyValueMatcher{
 				Key:   "trace_id",
 				Value: "nomatch",
 			},
@@ -226,7 +225,7 @@ func TestProcessor(t *testing.T) {
 		mockStore := newMockBloomStore(refs, queriers, metas)
 		mockStore.err = errors.New("store failed")
 
-		p := newProcessor("worker", 1, mockStore, log.NewNopLogger(), metrics)
+		p := newProcessor("worker", 1, false, mockStore, log.NewNopLogger(), metrics)
 
 		chunkRefs := createQueryInputFromBlockData(t, tenant, data, 10)
 		swb := seriesWithInterval{
@@ -238,7 +237,7 @@ func TestProcessor(t *testing.T) {
 			day: config.NewDayTime(truncateDay(now)),
 		}
 		matchers := []v1.LabelMatcher{
-			v1.PlainLabelMatcher{
+			v1.KeyValueMatcher{
 				Key:   "trace_id",
 				Value: "nomatch",
 			},

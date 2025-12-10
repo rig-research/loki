@@ -5,10 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/loki/v3/clients/pkg/promtail/targets/testutils"
 )
 
 func Test_parseMessage_function_app(t *testing.T) {
@@ -195,7 +197,7 @@ func Test_parseMessage_relable_config(t *testing.T) {
 		Value: readFile(t, "testdata/function_app_logs_message.txt"),
 	}
 
-	relableConfigs := []*relabel.Config{
+	relabelConfigs := testutils.ValidateRelabelConfig(t, []*relabel.Config{
 		{
 			SourceLabels: model.LabelNames{"__azure_event_hubs_category"},
 			Regex:        relabel.MustNewRegexp("(.*)"),
@@ -203,9 +205,9 @@ func Test_parseMessage_relable_config(t *testing.T) {
 			Replacement:  "$1",
 			Action:       "replace",
 		},
-	}
+	})
 
-	entries, err := messageParser.Parse(message, nil, relableConfigs, true)
+	entries, err := messageParser.Parse(message, nil, relabelConfigs, true)
 	assert.NoError(t, err)
 	assert.Len(t, entries, 2)
 
@@ -252,4 +254,38 @@ func readFile(t *testing.T, filename string) []byte {
 	data, err := os.ReadFile(filename)
 	assert.NoError(t, err)
 	return data
+}
+
+func Test_parseMessage_message_without_time_with_time_stamp(t *testing.T) {
+	messageParser := &messageParser{
+		disallowCustomMessages: true,
+	}
+
+	message := &sarama.ConsumerMessage{
+		Value:     readFile(t, "testdata/message_without_time_with_time_stamp.json"),
+		Timestamp: time.Date(2023, time.March, 17, 8, 44, 02, 0, time.UTC),
+	}
+
+	entries, err := messageParser.Parse(message, nil, nil, true)
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+
+	expectedLine1 := "{\n      \"timeStamp\": \"2024-09-18T00:45:09+00:00\",\n      \"resourceId\": \"/RESOURCE_ID\",\n      \"operationName\": \"ApplicationGatewayAccess\",\n      \"category\": \"ApplicationGatewayAccessLog\"\n    }"
+	assert.Equal(t, expectedLine1, entries[0].Line)
+
+	assert.Equal(t, time.Date(2024, time.September, 18, 00, 45, 9, 0, time.UTC), entries[0].Timestamp)
+}
+
+func Test_parseMessage_message_without_time_and_time_stamp(t *testing.T) {
+	messageParser := &messageParser{
+		disallowCustomMessages: true,
+	}
+
+	message := &sarama.ConsumerMessage{
+		Value:     readFile(t, "testdata/message_without_time_and_time_stamp.json"),
+		Timestamp: time.Date(2023, time.March, 17, 8, 44, 02, 0, time.UTC),
+	}
+
+	_, err := messageParser.Parse(message, nil, nil, true)
+	assert.EqualError(t, err, "required field or fields is empty")
 }

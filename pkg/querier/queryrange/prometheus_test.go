@@ -14,9 +14,13 @@ import (
 
 var emptyStats = `"stats": {
 	"index": {
+		"bloomFilterTime": 0,
+		"chunkRefsLookupTime": 0,
 		"postFilterChunks": 0,
 		"totalChunks": 0,
-		"shardsDuration": 0
+		"totalStreams": 0,
+		"shardsDuration": 0,
+		"usedBloomFilters": false
 	},
 	"ingester" : {
 		"store": {
@@ -26,6 +30,7 @@ var emptyStats = `"stats": {
 			"totalChunksDownloaded": 0,
 			"chunkRefsFetchTime": 0,
 			"queryReferencedStructuredMetadata": false,
+			"queryUsedV2Engine": false,
 			"pipelineWrapperFilteredLines": 0,
 			"chunk" :{
 				"compressedBytes": 0,
@@ -37,6 +42,21 @@ var emptyStats = `"stats": {
 				"headChunkStructuredMetadataBytes": 0,
                 "postFilterLines": 0,
 				"totalDuplicates": 0
+			},
+			"dataobj": {
+				"pageBatches": 0,
+				"pagesDownloaded": 0,
+				"pagesDownloadedBytes": 0,
+				"pagesScanned": 0,
+				"postFilterRows": 0,
+				"postPredicateRows": 0,
+				"postPredicateDecompressedBytes": 0,
+				"postPredicateStructuredMetadataBytes": 0,
+				"prePredicateDecompressedRows": 0,
+				"prePredicateDecompressedBytes": 0,
+				"prePredicateDecompressedStructuredMetadataBytes": 0,
+				"totalPageDownloadTime": 0,
+				"totalRowsAvailable": 0
 			}
 		},
 		"totalBatches": 0,
@@ -45,6 +65,7 @@ var emptyStats = `"stats": {
 		"totalReached": 0
 	},
 	"querier": {
+		"querierExecTime": 0,
 		"store": {
 			"chunksDownloadTime": 0,
 			"congestionControlLatency": 0,
@@ -52,6 +73,7 @@ var emptyStats = `"stats": {
 			"totalChunksDownloaded": 0,
 			"chunkRefsFetchTime": 0,
 			"queryReferencedStructuredMetadata": false,
+			"queryUsedV2Engine": false,
 			"pipelineWrapperFilteredLines": 0,
 			"chunk" :{
 				"compressedBytes": 0,
@@ -63,6 +85,21 @@ var emptyStats = `"stats": {
 				"headChunkStructuredMetadataBytes": 0,
                 "postFilterLines": 0,
 				"totalDuplicates": 0
+			},
+			"dataobj": {
+				"pageBatches": 0,
+				"pagesDownloaded": 0,
+				"pagesDownloadedBytes": 0,
+				"pagesScanned": 0,
+				"postFilterRows": 0,
+				"postPredicateRows": 0,
+				"postPredicateDecompressedBytes": 0,
+				"postPredicateStructuredMetadataBytes": 0,
+				"prePredicateDecompressedRows": 0,
+				"prePredicateDecompressedBytes": 0,
+				"prePredicateDecompressedStructuredMetadataBytes": 0,
+				"totalPageDownloadTime": 0,
+				"totalRowsAvailable": 0
 			}
 		}
 	},

@@ -31,29 +31,25 @@ priorityClassName: {{ $pcn }}
 {{- end }}
 {{- end }}
 
-{{- define "loki.ingester.readinessProbe" -}}
-{{- with .Values.ingester.readinessProbe }}  
-readinessProbe:
-  {{- toYaml . | nindent 2 }}
-{{- else }}
-{{- with .Values.loki.readinessProbe }}
+{{/*
+ingester readiness probe
+*/}}
+{{- define "loki.ingester.readinessProbe" }}
+{{- with .Values.ingester.readinessProbe | default .Values.loki.readinessProbe }}
 readinessProbe:
   {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
-{{- end -}}
 
-{{- define "loki.ingester.livenessProbe" -}}
-{{- with .Values.ingester.livenessProbe }}
-livenessProbe:
-  {{- toYaml . | nindent 2 }}
-{{- else }}
-{{- with .Values.loki.livenessProbe }}
+{{/*
+ingester liveness probe
+*/}}
+{{- define "loki.ingester.livenessProbe" }}
+{{- with .Values.ingester.livenessProbe | default .Values.loki.livenessProbe }}
 livenessProbe:
   {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
-{{- end -}}
 
 {{/*
 expects global context
@@ -71,4 +67,22 @@ expects a dict
 */}}
 {{- define "loki.ingester.maxUnavailable" -}}
 {{- ceil (mulf .replicas (divf (int .ctx.Values.ingester.zoneAwareReplication.maxUnavailablePct) 100)) -}}
+{{- end -}}
+
+{{/*
+Return rollout-group prefix if it is set
+*/}}
+{{- define "loki.prefixRolloutGroup" -}}
+{{- if .Values.ingester.rolloutGroupPrefix -}}
+{{- .Values.ingester.rolloutGroupPrefix -}}-
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return ingester name prefix if required
+*/}}
+{{- define "loki.prefixIngesterName" -}}
+{{- if .Values.ingester.addIngesterNamePrefix -}}
+loki-
+{{- end -}}
 {{- end -}}

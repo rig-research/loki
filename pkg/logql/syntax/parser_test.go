@@ -26,7 +26,7 @@ var ParseTestCases = []struct {
 		in: "count_over_time({foo=~`bar\\w+`}[12h] |~ `error\\`)",
 		exp: &RangeAggregationExpr{
 			Operation: "count_over_time",
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left: &PipelineExpr{
 					MultiStages: MultiStageExpr{
 						newLineFilterExpr(log.LineMatchRegexp, "", "error\\"),
@@ -55,7 +55,7 @@ var ParseTestCases = []struct {
 		in: `count_over_time({foo="bar"}[12h] |= "error")`,
 		exp: &RangeAggregationExpr{
 			Operation: "count_over_time",
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{{Type: labels.MatchEqual, Name: "foo", Value: "bar"}}),
 					MultiStageExpr{
@@ -71,7 +71,7 @@ var ParseTestCases = []struct {
 		in: `count_over_time({foo="bar"} |= "error" [12h])`,
 		exp: &RangeAggregationExpr{
 			Operation: "count_over_time",
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{{Type: labels.MatchEqual, Name: "foo", Value: "bar"}}),
 					MultiStageExpr{newLineFilterExpr(log.LineMatchEqual, "", "error")},
@@ -109,7 +109,7 @@ var ParseTestCases = []struct {
 	{
 		in: `count_over_time({ foo = "bar" }[12m])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 12 * time.Minute,
 			},
@@ -119,7 +119,7 @@ var ParseTestCases = []struct {
 	{
 		in: `bytes_over_time({ foo = "bar" }[12m])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 12 * time.Minute,
 			},
@@ -129,7 +129,7 @@ var ParseTestCases = []struct {
 	{
 		in: `bytes_rate({ foo = "bar" }[12m])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 12 * time.Minute,
 			},
@@ -139,7 +139,7 @@ var ParseTestCases = []struct {
 	{
 		in: `rate({ foo = "bar" }[5h])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -188,7 +188,7 @@ var ParseTestCases = []struct {
 	{
 		in: `rate({ foo = "bar" }[5d])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * 24 * time.Hour,
 			},
@@ -198,7 +198,7 @@ var ParseTestCases = []struct {
 	{
 		in: `count_over_time({ foo = "bar" }[1w])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 7 * 24 * time.Hour,
 			},
@@ -208,7 +208,7 @@ var ParseTestCases = []struct {
 	{
 		in: `absent_over_time({ foo = "bar" }[1w])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 7 * 24 * time.Hour,
 			},
@@ -218,7 +218,7 @@ var ParseTestCases = []struct {
 	{
 		in: `sum(rate({ foo = "bar" }[5h]))`,
 		exp: mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -228,7 +228,7 @@ var ParseTestCases = []struct {
 	{
 		in: `sum(rate({ foo ="bar" }[1y]))`,
 		exp: mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 365 * 24 * time.Hour,
 			},
@@ -238,7 +238,7 @@ var ParseTestCases = []struct {
 	{
 		in: `avg(count_over_time({ foo = "bar" }[5h])) by (bar,foo)`,
 		exp: mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -261,7 +261,7 @@ var ParseTestCases = []struct {
 		exp: mustNewVectorAggregationExpr(
 			mustNewLabelReplaceExpr(
 				&RangeAggregationExpr{
-					Left: &LogRange{
+					Left: &LogRangeExpr{
 						Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 						Interval: 5 * time.Hour,
 					},
@@ -277,7 +277,7 @@ var ParseTestCases = []struct {
 	{
 		in: `avg(count_over_time({ foo = "bar" }[5h])) by ()`,
 		exp: mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -290,7 +290,7 @@ var ParseTestCases = []struct {
 	{
 		in: `max without (bar) (count_over_time({ foo = "bar" }[5h]))`,
 		exp: mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -303,7 +303,7 @@ var ParseTestCases = []struct {
 	{
 		in: `max without () (count_over_time({ foo = "bar" }[5h]))`,
 		exp: mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -316,7 +316,7 @@ var ParseTestCases = []struct {
 	{
 		in: `topk(10,count_over_time({ foo = "bar" }[5h])) without (bar)`,
 		exp: mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -329,7 +329,7 @@ var ParseTestCases = []struct {
 	{
 		in: `bottomk(30 ,sum(rate({ foo = "bar" }[5h])) by (foo))`,
 		exp: mustNewVectorAggregationExpr(mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -343,7 +343,7 @@ var ParseTestCases = []struct {
 	{
 		in: `max( sum(count_over_time({ foo = "bar" }[5h])) without (foo,bar) ) by (foo)`,
 		exp: mustNewVectorAggregationExpr(mustNewVectorAggregationExpr(&RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 				Interval: 5 * time.Hour,
 			},
@@ -357,12 +357,26 @@ var ParseTestCases = []struct {
 		}, nil),
 	},
 	{
+		in: "{ foo = \"bar\" } | logfmt | msg =~ \"`.`\" ",
+		exp: newPipelineExpr(
+			newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
+			MultiStageExpr{
+				newLogfmtParserExpr(nil),
+				newLabelFilterExpr(log.NewStringLabelFilter(mustNewMatcher(labels.MatchRegexp, "msg", "`.`"))),
+			},
+		),
+	},
+	{
 		in:  `unk({ foo = "bar" }[5m])`,
 		err: logqlmodel.NewParseError("syntax error: unexpected IDENTIFIER", 1, 1),
 	},
 	{
 		in:  `absent_over_time({ foo = "bar" }[5h]) by (foo)`,
 		err: logqlmodel.NewParseError("grouping not allowed for absent_over_time aggregation", 0, 0),
+	},
+	{
+		in:  `approx_topk(2, count_over_time({ foo = "bar" }[5h])) by (foo)`,
+		err: logqlmodel.NewParseError("grouping not allowed for approx_topk aggregation", 0, 0),
 	},
 	{
 		in:  `rate({ foo = "bar" }[5minutes])`,
@@ -383,6 +397,30 @@ var ParseTestCases = []struct {
 	{
 		in:  `min({ foo = "bar" }[5m])`,
 		err: logqlmodel.NewParseError("syntax error: unexpected RANGE", 0, 20),
+	},
+	{
+		in: `avg(
+					label_replace(
+						count_over_time({ foo = "bar" }[5h]) or 0,
+						"bar",
+						"$1$2",
+						"foo",
+						"(.*).(.*)"
+					)
+				) by (bar,foo)`,
+		err: logqlmodel.NewParseError("unexpected literal for right leg of logical/set binary operation (or): 0.000000", 0, 0),
+	},
+	{
+		in: `avg(
+					label_replace(
+						count_over_time({ foo = "bar" }[5h]) or sum_over_time({ foo = "bar" }[5h]),
+						"bar",
+						"$1$2",
+						"foo",
+						"(.*).(.*)"
+					)
+				) by (bar,foo)`,
+		err: logqlmodel.NewParseError("invalid aggregation sum_over_time without unwrap", 0, 0),
 	},
 	// line filter for ip-matcher
 	{
@@ -685,7 +723,7 @@ var ParseTestCases = []struct {
 	{
 		in: `count_over_time(({foo="bar"} |= "baz" |~ "blip" != "flip" !~ "flap")[5m])`,
 		exp: newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -707,7 +745,7 @@ var ParseTestCases = []struct {
 	{
 		in: `bytes_over_time(({foo="bar"} |= "baz" |~ "blip" != "flip" !~ "flap")[5m])`,
 		exp: newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -729,7 +767,7 @@ var ParseTestCases = []struct {
 	{
 		in: `bytes_over_time(({foo="bar"} |= "baz" |~ "blip" != "flip" !~ "flap" | unpack)[5m])`,
 		exp: newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -761,7 +799,7 @@ var ParseTestCases = []struct {
 			`,
 		exp: mustNewLabelReplaceExpr(
 			newRangeAggregationExpr(
-				&LogRange{
+				&LogRangeExpr{
 					Left: newPipelineExpr(
 						newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 						MultiStageExpr{
@@ -788,7 +826,7 @@ var ParseTestCases = []struct {
 	{
 		in: `sum(count_over_time(({foo="bar"} |= "baz" |~ "blip" != "flip" !~ "flap")[5m])) by (foo)`,
 		exp: mustNewVectorAggregationExpr(newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -816,7 +854,7 @@ var ParseTestCases = []struct {
 	{
 		in: `sum(bytes_rate(({foo="bar"} |= "baz" |~ "blip" != "flip" !~ "flap")[5m])) by (foo)`,
 		exp: mustNewVectorAggregationExpr(newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -844,7 +882,7 @@ var ParseTestCases = []struct {
 	{
 		in: `topk(5,count_over_time(({foo="bar"} |= "baz" |~ "blip" != "flip" !~ "flap")[5m])) without (foo)`,
 		exp: mustNewVectorAggregationExpr(newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -874,7 +912,7 @@ var ParseTestCases = []struct {
 		exp: mustNewVectorAggregationExpr(
 			mustNewVectorAggregationExpr(
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: newPipelineExpr(
 							newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 							MultiStageExpr{
@@ -905,7 +943,7 @@ var ParseTestCases = []struct {
 	{
 		in: `count_over_time({foo="bar"}[5m] |= "baz" |~ "blip" != "flip" !~ "flap")`,
 		exp: newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -927,7 +965,7 @@ var ParseTestCases = []struct {
 	{
 		in: `sum(count_over_time({foo="bar"}[5m] |= "baz" |~ "blip" != "flip" !~ "flap")) by (foo)`,
 		exp: mustNewVectorAggregationExpr(newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -955,7 +993,7 @@ var ParseTestCases = []struct {
 	{
 		in: `topk(5,count_over_time({foo="bar"}[5m] |= "baz" |~ "blip" != "flip" !~ "flap")) without (foo)`,
 		exp: mustNewVectorAggregationExpr(newRangeAggregationExpr(
-			&LogRange{
+			&LogRangeExpr{
 				Left: newPipelineExpr(
 					newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 					MultiStageExpr{
@@ -985,7 +1023,7 @@ var ParseTestCases = []struct {
 		exp: mustNewVectorAggregationExpr(
 			mustNewVectorAggregationExpr(
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: newPipelineExpr(
 							newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}),
 							MultiStageExpr{
@@ -1053,7 +1091,7 @@ var ParseTestCases = []struct {
 					VectorMatching: &VectorMatching{Card: CardOneToOne},
 				},
 				mustNewVectorAggregationExpr(newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1069,7 +1107,7 @@ var ParseTestCases = []struct {
 					nil,
 				),
 				mustNewVectorAggregationExpr(newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1086,7 +1124,7 @@ var ParseTestCases = []struct {
 				),
 			),
 			mustNewVectorAggregationExpr(newRangeAggregationExpr(
-				&LogRange{
+				&LogRangeExpr{
 					Left: &MatchersExpr{
 						Mts: []*labels.Matcher{
 							mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1120,7 +1158,7 @@ var ParseTestCases = []struct {
 					VectorMatching: &VectorMatching{Card: CardOneToOne},
 				},
 				mustNewVectorAggregationExpr(newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1136,7 +1174,7 @@ var ParseTestCases = []struct {
 					nil,
 				),
 				mustNewVectorAggregationExpr(newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1153,7 +1191,7 @@ var ParseTestCases = []struct {
 				),
 			),
 			mustNewVectorAggregationExpr(newRangeAggregationExpr(
-				&LogRange{
+				&LogRangeExpr{
 					Left: &MatchersExpr{
 						Mts: []*labels.Matcher{
 							mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1183,7 +1221,7 @@ var ParseTestCases = []struct {
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
 			},
 			mustNewVectorAggregationExpr(newRangeAggregationExpr(
-				&LogRange{
+				&LogRangeExpr{
 					Left: &MatchersExpr{
 						Mts: []*labels.Matcher{
 							mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1204,7 +1242,7 @@ var ParseTestCases = []struct {
 					VectorMatching: &VectorMatching{Card: CardOneToOne},
 				},
 				mustNewVectorAggregationExpr(newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1220,7 +1258,7 @@ var ParseTestCases = []struct {
 					nil,
 				),
 				mustNewVectorAggregationExpr(newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -1250,7 +1288,7 @@ var ParseTestCases = []struct {
 					VectorMatching: &VectorMatching{Card: CardOneToOne},
 				},
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: newPipelineExpr(
 							newMatcherExpr([]*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "namespace", "tns"),
@@ -1261,7 +1299,7 @@ var ParseTestCases = []struct {
 						Interval: 5 * time.Minute,
 					}, OpRangeTypeCount, nil, nil),
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "namespace", "tns"),
@@ -1284,7 +1322,7 @@ var ParseTestCases = []struct {
 					VectorMatching: &VectorMatching{Card: CardOneToOne},
 				},
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: newPipelineExpr(
 							newMatcherExpr([]*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "namespace", "tns"),
@@ -1295,7 +1333,7 @@ var ParseTestCases = []struct {
 						Interval: 5 * time.Minute,
 					}, OpRangeTypeCount, nil, nil),
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "namespace", "tns"),
@@ -1316,7 +1354,7 @@ var ParseTestCases = []struct {
 			},
 			mustNewVectorAggregationExpr(
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left: &MatchersExpr{
 							Mts: []*labels.Matcher{
 								mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -2573,7 +2611,7 @@ var ParseTestCases = []struct {
 		exp: mustNewBinOpExpr(OpTypeGT, &BinOpOptions{ReturnBool: true, VectorMatching: &VectorMatching{Card: CardOneToMany, Include: []string{"app"}, On: true, MatchingLabels: nil}},
 			mustNewVectorAggregationExpr(
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left:     newMatcherExpr([]*labels.Matcher{{Type: labels.MatchEqual, Name: "app", Value: "foo"}}),
 						Interval: 1 * time.Minute,
 					},
@@ -2585,7 +2623,7 @@ var ParseTestCases = []struct {
 			),
 			mustNewVectorAggregationExpr(
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left:     newMatcherExpr([]*labels.Matcher{{Type: labels.MatchEqual, Name: "app", Value: "foo"}}),
 						Interval: 1 * time.Minute,
 					},
@@ -2604,7 +2642,7 @@ var ParseTestCases = []struct {
 		exp: mustNewBinOpExpr(OpTypeGT, &BinOpOptions{ReturnBool: true, VectorMatching: &VectorMatching{Card: CardOneToMany, Include: nil, On: true, MatchingLabels: nil}},
 			mustNewVectorAggregationExpr(
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left:     newMatcherExpr([]*labels.Matcher{{Type: labels.MatchEqual, Name: "app", Value: "foo"}}),
 						Interval: 1 * time.Minute,
 					},
@@ -2616,7 +2654,7 @@ var ParseTestCases = []struct {
 			),
 			mustNewVectorAggregationExpr(
 				newRangeAggregationExpr(
-					&LogRange{
+					&LogRangeExpr{
 						Left:     newMatcherExpr([]*labels.Matcher{{Type: labels.MatchEqual, Name: "app", Value: "foo"}}),
 						Interval: 1 * time.Minute,
 					},
@@ -2790,14 +2828,14 @@ var ParseTestCases = []struct {
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
 			},
 			SampleExpr: &RangeAggregationExpr{
-				Left: &LogRange{
+				Left: &LogRangeExpr{
 					Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 					Interval: 12 * time.Minute,
 				},
 				Operation: "count_over_time",
 			},
 			RHS: &RangeAggregationExpr{
-				Left: &LogRange{
+				Left: &LogRangeExpr{
 					Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 					Interval: 12 * time.Minute,
 				},
@@ -2814,7 +2852,7 @@ var ParseTestCases = []struct {
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
 			},
 			SampleExpr: &RangeAggregationExpr{
-				Left: &LogRange{
+				Left: &LogRangeExpr{
 					Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 					Interval: 12 * time.Minute,
 				},
@@ -2837,7 +2875,7 @@ var ParseTestCases = []struct {
 				VectorMatching: &VectorMatching{},
 			},
 			SampleExpr: &RangeAggregationExpr{
-				Left: &LogRange{
+				Left: &LogRangeExpr{
 					Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 					Interval: 12 * time.Minute,
 				},
@@ -2850,7 +2888,7 @@ var ParseTestCases = []struct {
 					VectorMatching: &VectorMatching{Card: CardOneToOne},
 				},
 				SampleExpr: &RangeAggregationExpr{
-					Left: &LogRange{
+					Left: &LogRangeExpr{
 						Left:     &MatchersExpr{Mts: []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "foo", "bar")}},
 						Interval: 12 * time.Minute,
 					},
@@ -3027,7 +3065,7 @@ var ParseTestCases = []struct {
 	{
 		in: `count_over_time({ foo ="bar" } | json layer7_something_specific="layer7_something_specific" [12m])`,
 		exp: &RangeAggregationExpr{
-			Left: &LogRange{
+			Left: &LogRangeExpr{
 				Left: &PipelineExpr{
 					MultiStages: MultiStageExpr{
 						newJSONExpressionParser([]log.LabelExtractionExpr{
@@ -3053,7 +3091,7 @@ var ParseTestCases = []struct {
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
 			},
 			mustNewVectorAggregationExpr(newRangeAggregationExpr(
-				&LogRange{
+				&LogRangeExpr{
 					Left: &MatchersExpr{
 						Mts: []*labels.Matcher{
 							mustNewMatcher(labels.MatchEqual, "foo", "bar"),
@@ -3143,7 +3181,7 @@ var ParseTestCases = []struct {
 			Left: newMatcherExpr([]*labels.Matcher{mustNewMatcher(labels.MatchEqual, "app", "foo")}),
 			MultiStages: MultiStageExpr{
 				&LineFilterExpr{
-					Left: newOrLineFilter(
+					Left: newOrLineFilterExpr(
 						&LineFilterExpr{
 							LineFilter: LineFilter{
 								Ty:    log.LineMatchEqual,
@@ -3182,7 +3220,7 @@ var ParseTestCases = []struct {
 						Ty:    log.LineMatchEqual,
 						Match: "foo",
 					},
-					Or: newOrLineFilter(
+					Or: newOrLineFilterExpr(
 						&LineFilterExpr{
 							LineFilter: LineFilter{
 								Ty:    log.LineMatchEqual,
@@ -3212,7 +3250,7 @@ var ParseTestCases = []struct {
 						Ty:    log.LineMatchPattern,
 						Match: "foo",
 					},
-					Or: newOrLineFilter(
+					Or: newOrLineFilterExpr(
 						&LineFilterExpr{
 							LineFilter: LineFilter{
 								Ty:    log.LineMatchPattern,
@@ -3231,6 +3269,110 @@ var ParseTestCases = []struct {
 				},
 			},
 		},
+	},
+	{
+		in: `variants(count_over_time({foo="bar"}[5m])) of ({foo="bar"}[5m])`,
+		exp: &MultiVariantExpr{
+			logRange: &LogRangeExpr{
+				Left: &MatchersExpr{
+					Mts: []*labels.Matcher{
+						{
+							Name:  "foo",
+							Value: "bar",
+							Type:  labels.MatchEqual,
+						},
+					},
+				},
+				Interval: 5 * time.Minute,
+				Offset:   0,
+				Unwrap:   nil,
+			},
+			variants: []SampleExpr{
+				&RangeAggregationExpr{
+					Left: &LogRangeExpr{
+						Left: &MatchersExpr{
+							Mts: []*labels.Matcher{
+								{
+									Name:  "foo",
+									Value: "bar",
+									Type:  labels.MatchEqual,
+								},
+							},
+						},
+						Interval: 5 * time.Minute,
+						Offset:   0,
+						Unwrap:   nil,
+					},
+					Operation: OpRangeTypeCount,
+					Params:    new(float64),
+					Grouping:  &Grouping{},
+					err:       nil,
+				},
+			},
+		},
+		err: nil,
+	},
+	{
+		in: `variants(count_over_time({foo="bar"}[5m]), rate({foo="bar"}[5m])) of ({foo="bar"}[5m])`,
+		exp: &MultiVariantExpr{
+			logRange: &LogRangeExpr{
+				Left: &MatchersExpr{
+					Mts: []*labels.Matcher{
+						{
+							Name:  "foo",
+							Value: "bar",
+							Type:  labels.MatchEqual,
+						},
+					},
+				},
+				Interval: 5 * time.Minute,
+				Offset:   0,
+				Unwrap:   nil,
+			},
+			variants: []SampleExpr{
+				&RangeAggregationExpr{
+					Left: &LogRangeExpr{
+						Left: &MatchersExpr{
+							Mts: []*labels.Matcher{
+								{
+									Name:  "foo",
+									Value: "bar",
+									Type:  labels.MatchEqual,
+								},
+							},
+						},
+						Interval: 5 * time.Minute,
+						Offset:   0,
+						Unwrap:   nil,
+					},
+					Operation: OpRangeTypeCount,
+					Params:    new(float64),
+					Grouping:  &Grouping{},
+					err:       nil,
+				},
+				&RangeAggregationExpr{
+					Left: &LogRangeExpr{
+						Left: &MatchersExpr{
+							Mts: []*labels.Matcher{
+								{
+									Name:  "foo",
+									Value: "bar",
+									Type:  labels.MatchEqual,
+								},
+							},
+						},
+						Interval: 5 * time.Minute,
+						Offset:   0,
+						Unwrap:   nil,
+					},
+					Operation: OpRangeTypeRate,
+					Params:    new(float64),
+					Grouping:  &Grouping{},
+					err:       nil,
+				},
+			},
+		},
+		err: nil,
 	},
 }
 
@@ -3335,7 +3477,7 @@ func Test_PipelineCombined(t *testing.T) {
 	p, err := expr.Pipeline()
 	require.Nil(t, err)
 	sp := p.ForStream(labels.EmptyLabels())
-	line, lbs, matches := sp.Process(0, []byte(`level=debug ts=2020-10-02T10:10:42.092268913Z caller=logging.go:66 traceID=a9d4d8a928d8db1 msg="POST /api/prom/api/v1/query_range (200) 1.5s"`))
+	line, lbs, matches := sp.Process(0, []byte(`level=debug ts=2020-10-02T10:10:42.092268913Z caller=logging.go:66 traceID=a9d4d8a928d8db1 msg="POST /api/prom/api/v1/query_range (200) 1.5s"`), labels.EmptyLabels())
 	require.True(t, matches)
 	require.Equal(
 		t,
@@ -3364,7 +3506,7 @@ func Benchmark_PipelineCombined(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		line, lbs, matches = sp.Process(0, in)
+		line, lbs, matches = sp.Process(0, in, labels.EmptyLabels())
 	}
 	require.True(b, matches)
 	require.Equal(
@@ -3381,27 +3523,56 @@ func Benchmark_MetricPipelineCombined(b *testing.B) {
 	expr, err := ParseSampleExpr(query)
 	require.Nil(b, err)
 
-	p, err := expr.Extractor()
+	extractors, err := expr.Extractors()
 	require.Nil(b, err)
-	sp := p.ForStream(labels.EmptyLabels())
-	var (
-		v       float64
-		lbs     log.LabelsResult
-		matches bool
-	)
-	in := []byte(`level=debug ts=2020-10-02T10:10:42.092268913Z caller=logging.go:66 traceID=a9d4d8a928d8db1 msg="POST /api/prom/api/v1/query_range (200) 1.5s"`)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		v, lbs, matches = sp.Process(0, in)
+
+	for _, p := range extractors {
+		sp := p.ForStream(labels.EmptyLabels())
+		var (
+			samples []log.ExtractedSample
+			v       float64
+			lbs     log.LabelsResult
+			matches bool
+		)
+		in := []byte(
+			`level=debug ts=2020-10-02T10:10:42.092268913Z caller=logging.go:66 traceID=a9d4d8a928d8db1 msg="POST /api/prom/api/v1/query_range (200) 1.5s"`,
+		)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			samples, matches = sp.Process(0, in, labels.EmptyLabels())
+		}
+
+		v = samples[0].Value
+		lbs = samples[0].Labels
+
+		require.True(b, matches)
+		require.Equal(
+			b,
+			labels.FromStrings(
+				"caller",
+				"logging.go:66",
+				"duration",
+				"1.5s",
+				"level",
+				"debug",
+				"method",
+				"POST",
+				"msg",
+				"POST /api/prom/api/v1/query_range (200) 1.5s",
+				"path",
+				"/api/prom/api/v1/query_range",
+				"status",
+				"200",
+				"traceID",
+				"a9d4d8a928d8db1",
+				"ts",
+				"2020-10-02T10:10:42.092268913Z",
+			),
+			lbs.Labels(),
+		)
+		require.Equal(b, 1.0, v)
 	}
-	require.True(b, matches)
-	require.Equal(
-		b,
-		labels.FromStrings("caller", "logging.go:66", "duration", "1.5s", "level", "debug", "method", "POST", "msg", "POST /api/prom/api/v1/query_range (200) 1.5s", "path", "/api/prom/api/v1/query_range", "status", "200", "traceID", "a9d4d8a928d8db1", "ts", "2020-10-02T10:10:42.092268913Z"),
-		lbs.Labels(),
-	)
-	require.Equal(b, 1.0, v)
 }
 
 var c []*labels.Matcher
@@ -3542,6 +3713,22 @@ func TestParseLabels(t *testing.T) {
 			output: labels.FromStrings("job", "foo"),
 		},
 		{
+			desc:  "multiple labels, already sorted",
+			input: `{env="a", job="foo"}`,
+			output: labels.FromStrings(
+				"env", "a",
+				"job", "foo",
+			),
+		},
+		{
+			desc:  "multiple labels, not sorted",
+			input: `{job="foo", env="a"}`,
+			output: labels.FromStrings(
+				"env", "a",
+				"job", "foo",
+			),
+		},
+		{
 			desc:   "strip empty label value",
 			input:  `{job="foo", bar=""}`,
 			output: labels.FromStrings("job", "foo"),
@@ -3581,5 +3768,12 @@ func TestParseSampleExpr_String(t *testing.T) {
 
 		// escaping is hard: the result is {cluster="beep", namespace="boop"} | msg=~`\w.*` which is equivalent to the original
 		require.Equal(t, "{cluster=\"beep\", namespace=\"boop\"} | msg=~`\\w.*`", expr.String())
+	})
+
+	t.Run("it correctly surrounds regex containing backticks with double quotes", func(t *testing.T) {
+		query := "{foo=\"bar\"} | logfmt | msg=~\"`.\\\"`\""
+		expr, err := ParseExpr(query)
+		require.NoError(t, err)
+		require.Equal(t, query, expr.String())
 	})
 }

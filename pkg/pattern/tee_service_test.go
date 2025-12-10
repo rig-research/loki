@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/distributor"
 	"github.com/grafana/loki/v3/pkg/logproto"
+	"github.com/grafana/loki/v3/pkg/runtime"
 
 	"github.com/grafana/loki/pkg/push"
 )
@@ -47,7 +48,11 @@ func getTestTee(t *testing.T) (*TeeService, *mockPoolClient) {
 
 	logsTee, err := NewTeeService(
 		cfg,
+		&fakeLimits{
+			metricAggregationEnabled: true,
+		},
 		ringClient,
+		runtime.DefaultTenantConfigs(),
 		"test",
 		nil,
 		log.NewNopLogger(),
@@ -65,7 +70,7 @@ func TestPatternTeeBasic(t *testing.T) {
 	require.NoError(t, tee.Start(ctx))
 
 	now := time.Now()
-	tee.Duplicate("test-tenant", []distributor.KeyedStream{
+	tee.Duplicate(ctx, "test-tenant", []distributor.KeyedStream{
 		{HashKey: 123, Stream: push.Stream{
 			Labels: `{foo="bar"}`,
 			Entries: []push.Entry{
@@ -76,7 +81,7 @@ func TestPatternTeeBasic(t *testing.T) {
 		}},
 	})
 
-	tee.Duplicate("test-tenant", []distributor.KeyedStream{
+	tee.Duplicate(ctx, "test-tenant", []distributor.KeyedStream{
 		{HashKey: 123, Stream: push.Stream{
 			Labels: `{foo="bar"}`,
 			Entries: []push.Entry{
@@ -87,7 +92,7 @@ func TestPatternTeeBasic(t *testing.T) {
 		}},
 	})
 
-	tee.Duplicate("test-tenant", []distributor.KeyedStream{
+	tee.Duplicate(ctx, "test-tenant", []distributor.KeyedStream{
 		{HashKey: 456, Stream: push.Stream{
 			Labels: `{ping="pong"}`,
 			Entries: []push.Entry{
@@ -156,14 +161,14 @@ func TestPatternTeeEmptyStream(t *testing.T) {
 
 	require.NoError(t, tee.Start(ctx))
 
-	tee.Duplicate("test-tenant", []distributor.KeyedStream{
+	tee.Duplicate(ctx, "test-tenant", []distributor.KeyedStream{
 		{HashKey: 123, Stream: push.Stream{
 			Labels:  `{foo="bar"}`,
 			Entries: []push.Entry{},
 		}},
 	})
 
-	tee.Duplicate("test-tenant", []distributor.KeyedStream{
+	tee.Duplicate(ctx, "test-tenant", []distributor.KeyedStream{
 		{HashKey: 456, Stream: push.Stream{
 			Labels:  `{ping="pong"}`,
 			Entries: []push.Entry{},

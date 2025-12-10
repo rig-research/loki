@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/storage/bloom/v1/filter"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 var metrics = NewMetrics(prometheus.DefaultRegisterer)
@@ -49,7 +50,7 @@ func TestTokenizerPopulate(t *testing.T) {
 		time.Unix(0, 0), // TODO: Parameterize/better handle the timestamps?
 		time.Unix(0, math.MaxInt64),
 		logproto.FORWARD,
-		log.NewNoopPipeline().ForStream(nil),
+		log.NewNoopPipeline().ForStream(labels.EmptyLabels()),
 	)
 	require.Nil(t, err)
 
@@ -94,7 +95,7 @@ func TestBloomTokenizerPopulateWithoutPreexistingBloom(t *testing.T) {
 		time.Unix(0, 0), // TODO: Parameterize/better handle the timestamps?
 		time.Unix(0, math.MaxInt64),
 		logproto.FORWARD,
-		log.NewNoopPipeline().ForStream(nil),
+		log.NewNoopPipeline().ForStream(labels.EmptyLabels()),
 	)
 	require.Nil(t, err)
 
@@ -136,7 +137,7 @@ func chunkRefItrFromMetadata(metadata ...push.LabelsAdapter) (iter.EntryIterator
 		time.Unix(0, 0), // TODO: Parameterize/better handle the timestamps?
 		time.Unix(0, math.MaxInt64),
 		logproto.FORWARD,
-		log.NewNoopPipeline().ForStream(nil),
+		log.NewNoopPipeline().ForStream(labels.EmptyLabels()),
 	)
 	return itr, err
 }
@@ -173,7 +174,7 @@ func TestTokenizerPopulateWontExceedMaxSize(t *testing.T) {
 	var ct int
 	for created := range ch {
 		ct++
-		capacity := created.Bloom.ScalableBloomFilter.Capacity() / 8
+		capacity := created.Bloom.Capacity() / 8
 		t.Log(ct, int(capacity), maxSize)
 		require.Less(t, int(capacity), maxSize)
 	}
@@ -219,7 +220,7 @@ func BenchmarkPopulateSeriesWithBloom(b *testing.B) {
 			time.Unix(0, 0), // TODO: Parameterize/better handle the timestamps?
 			time.Unix(0, math.MaxInt64),
 			logproto.FORWARD,
-			log.NewNoopPipeline().ForStream(nil),
+			log.NewNoopPipeline().ForStream(labels.EmptyLabels()),
 		)
 		require.Nil(b, err)
 

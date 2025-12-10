@@ -45,7 +45,7 @@ func newSliceValidator(path, in string,
 
 	var v *schemaSliceValidator
 	if opts.recycleValidators {
-		v = poolOfSliceValidators.BorrowValidator()
+		v = pools.poolOfSliceValidators.BorrowValidator()
 	} else {
 		v = new(schemaSliceValidator)
 	}
@@ -83,7 +83,7 @@ func (s *schemaSliceValidator) Validate(data interface{}) *Result {
 
 	var result *Result
 	if s.Options.recycleResult {
-		result = poolOfResults.BorrowResult()
+		result = pools.poolOfResults.BorrowResult()
 	} else {
 		result = new(Result)
 	}
@@ -94,7 +94,7 @@ func (s *schemaSliceValidator) Validate(data interface{}) *Result {
 	size := val.Len()
 
 	if s.Items != nil && s.Items.Schema != nil {
-		for i := 0; i < size; i++ {
+		for i := range size {
 			validator := newSchemaValidator(s.Items.Schema, s.Root, s.Path, s.KnownFormats, s.Options)
 			validator.SetPath(fmt.Sprintf("%s.%d", s.Path, i))
 			value := val.Index(i)
@@ -105,7 +105,7 @@ func (s *schemaSliceValidator) Validate(data interface{}) *Result {
 	itemsSize := 0
 	if s.Items != nil && len(s.Items.Schemas) > 0 {
 		itemsSize = len(s.Items.Schemas)
-		for i := 0; i < itemsSize; i++ {
+		for i := range itemsSize {
 			if size <= i {
 				break
 			}
@@ -146,5 +146,5 @@ func (s *schemaSliceValidator) Validate(data interface{}) *Result {
 }
 
 func (s *schemaSliceValidator) redeem() {
-	poolOfSliceValidators.RedeemValidator(s)
+	pools.poolOfSliceValidators.RedeemValidator(s)
 }

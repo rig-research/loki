@@ -5,7 +5,49 @@ import (
 	"bytes"
 	"io"
 	"strconv"
+	"sync"
 )
+
+const (
+	MaxUint = ^uint(0)
+	MaxInt  = int(MaxUint >> 1)
+)
+
+// Error message constants for lit field in ILLEGAL tokens
+var (
+	ErrMsgInvalidLength   = []byte("invalid message length")
+	ErrMsgTooLarge        = []byte("message length (%d) exceeds maximum length (%d)")
+	ErrMsgExceedsIntLimit = []byte("message length exceeds system limit")
+)
+
+var readerPool sync.Pool
+
+// getReader returns a *bufio.Reader that is guaranteed
+// to have a buffer of at least `size`.
+func getReader(r io.Reader, size int) *bufio.Reader {
+	if buf := readerPool.Get(); buf != nil {
+		buf := buf.(*bufio.Reader)
+
+		// If the buffer we get is smaller than the requested buffer, put it back
+		// and create a new one. stdlib has multiple buckets for various sizes to
+		// make this more efficient, but that's overkill here.
+		if buf.Size() < size {
+			readerPool.Put(buf)
+			buf = bufio.NewReaderSize(r, size)
+		} else {
+			buf.Reset(r)
+		}
+
+		return buf
+	}
+
+	return bufio.NewReaderSize(r, size)
+}
+
+// putReader returns the given bufio.Reader to the pool to be used again.
+func putReader(r *bufio.Reader) {
+	readerPool.Put(r)
+}
 
 // eof represents a marker byte for the end of the reader
 var eof = byte(0)
@@ -21,12 +63,12 @@ var lt = byte(60)
 
 // isDigit returns true if the byte represents a number in [0,9]
 func isDigit(ch byte) bool {
-	return (ch >= 47 && ch <= 57)
+	return (ch >= 48 && ch <= 57)
 }
 
 // isNonZeroDigit returns true if the byte represents a number in ]0,9]
 func isNonZeroDigit(ch byte) bool {
-	return (ch >= 48 && ch <= 57)
+	return (ch >= 49 && ch <= 57)
 }
 
 // Scanner represents the lexical scanner for octet counting transport.
@@ -34,12 +76,18 @@ type Scanner struct {
 	r      *bufio.Reader
 	msglen uint64
 	ready  bool
+	maxlen int
 }
 
 // NewScanner returns a pointer to a new instance of Scanner.
 func NewScanner(r io.Reader, maxLength int) *Scanner {
+	if maxLength <= 0 {
+		maxLength = DefaultMaxSize
+	}
+
 	return &Scanner{
-		r: bufio.NewReaderSize(r, maxLength+20), // max uint64 is 19 characters + a space
+		r:      getReader(r, maxLength+20), // max uint64 is 19 characters + a space
+		maxlen: maxLength,
 	}
 }
 
@@ -119,8 +167,23 @@ func (s *Scanner) scanMsgLen() Token {
 		}
 	}
 
-	msglen := buf.String()
-	s.msglen, _ = strconv.ParseUint(msglen, 10, 64)
+	msgLenStr := buf.String()
+	l, err := strconv.ParseUint(msgLenStr, 10, 64)
+	if err != nil {
+		return Token{
+			typ: ILLEGAL,
+			lit: ErrMsgInvalidLength,
+		}
+	}
+	// Check if the message length exceeds our maximum
+	if l > uint64(s.maxlen) {
+		s.msglen = l // Setting it only for error reporting duties
+		return Token{
+			typ: ILLEGAL,
+			lit: ErrMsgTooLarge,
+		}
+	}
+	s.msglen = l
 
 	return Token{
 		typ: MSGLEN,
@@ -129,8 +192,19 @@ func (s *Scanner) scanMsgLen() Token {
 }
 
 func (s *Scanner) scanSyslogMsg() Token {
-	// Check the reader contains almost MSGLEN characters
+	// Perform this check here because int conversion happens here
+	if s.msglen > uint64(MaxInt) {
+		s.ready = false
+		s.msglen = 0
+		return Token{
+			typ: ILLEGAL,
+			lit: ErrMsgExceedsIntLimit,
+		}
+	}
+
 	n := int(s.msglen)
+
+	// Check the reader contains almost MSGLEN characters
 	b, err := s.r.Peek(n)
 	if err != nil {
 		return Token{
@@ -150,4 +224,20 @@ func (s *Scanner) scanSyslogMsg() Token {
 		typ: SYSLOGMSG,
 		lit: b,
 	}
+}
+
+func (s *Scanner) Release() {
+	putReader(s.r)
+}
+
+// SetMaxLength updates the maximum allowed message length
+func (s *Scanner) SetMaxLength(maxLength int) {
+	if maxLength > 0 {
+		s.maxlen = maxLength
+	}
+}
+
+// MaxLength returns the current maximum allowed message length
+func (s *Scanner) MaxLength() int {
+	return s.maxlen
 }

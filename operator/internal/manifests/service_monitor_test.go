@@ -10,8 +10,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	configv1 "github.com/grafana/loki/operator/apis/config/v1"
-	lokiv1 "github.com/grafana/loki/operator/apis/loki/v1"
+	configv1 "github.com/grafana/loki/operator/api/config/v1"
+	lokiv1 "github.com/grafana/loki/operator/api/loki/v1"
 )
 
 // Test that all serviceMonitor match the labels of their services so that we know all serviceMonitor
@@ -203,9 +203,9 @@ func TestServiceMonitorEndpoints_ForBuiltInCertRotation(t *testing.T) {
 
 			// Check using built-in PKI
 			c := tst.ServiceMonitor.Spec.Endpoints[0].TLSConfig
-			require.Equal(t, c.CA.ConfigMap.LocalObjectReference.Name, signingCABundleName(opt.Name))
-			require.Equal(t, c.Cert.Secret.LocalObjectReference.Name, tst.Service.Name)
-			require.Equal(t, c.KeySecret.LocalObjectReference.Name, tst.Service.Name)
+			require.Equal(t, c.CA.ConfigMap.Name, signingCABundleName(opt.Name))
+			require.Equal(t, c.Cert.Secret.Name, tst.Service.Name)
+			require.Equal(t, c.KeySecret.Name, tst.Service.Name)
 		})
 	}
 }

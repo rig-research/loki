@@ -85,6 +85,13 @@ func (s *store) init(name, prefix string, indexShipperCfg indexshipper.Config, s
 	var indices []Index
 	opts := DefaultIndexClientOptions()
 
+	// early return in case index shipper is disabled.
+	if indexShipperCfg.Mode == indexshipper.ModeDisabled {
+		s.indexWriter = noopIndexWriter{}
+		s.Reader = NewIndexClient(NoopIndex{}, opts, limits)
+		return nil
+	}
+
 	if indexShipperCfg.Mode == indexshipper.ModeWriteOnly {
 		// We disable bloom filters on write nodes
 		// for the Stats() methods as it's of relatively little
@@ -154,14 +161,14 @@ func (s *store) IndexChunk(_ context.Context, _ model.Time, _ model.Time, chk ch
 	approxKB := math.Round(float64(chk.Data.UncompressedSize()) / float64(1<<10))
 	metas := tsdbindex.ChunkMetas{
 		{
-			Checksum: chk.ChunkRef.Checksum,
-			MinTime:  int64(chk.ChunkRef.From),
-			MaxTime:  int64(chk.ChunkRef.Through),
+			Checksum: chk.Checksum,
+			MinTime:  int64(chk.From),
+			MaxTime:  int64(chk.Through),
 			KB:       uint32(approxKB),
 			Entries:  uint32(chk.Data.Entries()),
 		},
 	}
-	if err := s.indexWriter.Append(chk.UserID, chk.Metric, chk.ChunkRef.Fingerprint, metas); err != nil {
+	if err := s.indexWriter.Append(chk.UserID, chk.Metric, chk.Fingerprint, metas); err != nil {
 		return errors.Wrap(err, "writing index entry")
 	}
 	return nil
@@ -171,4 +178,10 @@ type failingIndexWriter struct{}
 
 func (f failingIndexWriter) Append(_ string, _ labels.Labels, _ uint64, _ tsdbindex.ChunkMetas) error {
 	return fmt.Errorf("index writer is not initialized due to tsdb store being initialized in read-only mode")
+}
+
+type noopIndexWriter struct{}
+
+func (f noopIndexWriter) Append(_ string, _ labels.Labels, _ uint64, _ tsdbindex.ChunkMetas) error {
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"gopkg.in/yaml.v2"
 
@@ -53,10 +54,10 @@ func (c *Config) Validate() error {
 
 type RemoteWriteConfig struct {
 	Client              *config.RemoteWriteConfig           `yaml:"client,omitempty" doc:"deprecated|description=Use 'clients' instead. Configure remote write client."`
-	Clients             map[string]config.RemoteWriteConfig `yaml:"clients,omitempty" doc:"description=Configure remote write clients. A map with remote client id as key."`
+	Clients             map[string]config.RemoteWriteConfig `yaml:"clients,omitempty" doc:"description=Configure remote write clients. A map with remote client id as key. For details, see https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write Specifying a header with key 'X-Scope-OrgID' under the 'headers' section of RemoteWriteConfig is not permitted. If specified, it will be dropped during config parsing."`
 	Enabled             bool                                `yaml:"enabled"`
 	ConfigRefreshPeriod time.Duration                       `yaml:"config_refresh_period"`
-	AddOrgIDHeader      bool                                `yaml:"add_org_id_header" doc:"description=Add X-Scope-OrgID header in remote write requests."`
+	AddOrgIDHeader      bool                                `yaml:"add_org_id_header" doc:"description=Add an X-Scope-OrgID header in remote write requests with the tenant ID of a Loki tenant that the recording rules are part of."`
 }
 
 func (c *RemoteWriteConfig) Validate() error {
@@ -68,10 +69,20 @@ func (c *RemoteWriteConfig) Validate() error {
 		return errors.New("remote-write enabled but no clients URL are configured")
 	}
 
+	if c.Client != nil {
+		if err := c.Client.Validate(model.UTF8Validation); err != nil {
+			return fmt.Errorf("invalid remote write client: %w", err)
+		}
+	}
+
 	if len(c.Clients) > 0 {
 		for id, clt := range c.Clients {
 			if clt.URL == nil {
 				return fmt.Errorf("remote-write enabled but client '%s' URL for tenant %s is not configured", clt.Name, id)
+			}
+
+			if err := clt.Validate(model.UTF8Validation); err != nil {
+				return fmt.Errorf("invalid remote write client for tenant %q: %w", id, err)
 			}
 		}
 	}

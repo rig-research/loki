@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -61,15 +60,7 @@ func TestBloomBuilding(t *testing.T) {
 	cliIngester.Now = now
 
 	// We now ingest some logs across many series.
-	series := make([]labels.Labels, 0, nSeries)
-	for i := 0; i < nSeries; i++ {
-		lbs := labels.FromStrings("job", fmt.Sprintf("job-%d", i))
-		series = append(series, lbs)
-
-		for j := 0; j < nLogsPerSeries; j++ {
-			require.NoError(t, cliDistributor.PushLogLine(fmt.Sprintf("log line %d", j), now, nil, lbs.Map()))
-		}
-	}
+	series := writeSeries(t, nSeries, nLogsPerSeries, cliDistributor, now, "job")
 
 	// restart ingester which should flush the chunks and index
 	require.NoError(t, tIngester.Restart())
@@ -93,9 +84,11 @@ func TestBloomBuilding(t *testing.T) {
 		"-bloom-build.enabled=true",
 		"-bloom-build.enable=true",
 		"-bloom-build.builder.planner-address=localhost:9095", // hack to succeed config validation
-		"-bloom-build.planner.interval=15s",
+		"-bloom-build.planner.interval=10s",
 		"-bloom-build.planner.min-table-offset=0", // Disable table offset so we process today's data.
 		"-bloom.cache-list-ops=0",                 // Disable cache list operations to avoid caching issues.
+		"-bloom-build.planning-strategy=split_by_series_chunks_size",
+		"-bloom-build.split-target-series-chunk-size=1KB",
 	)
 	require.NoError(t, clu.Run())
 
@@ -122,14 +115,8 @@ func TestBloomBuilding(t *testing.T) {
 	checkSeriesInBlooms(t, now, tenantID, bloomStore, series)
 
 	// Push some more logs so TSDBs need to be updated.
-	for i := 0; i < nSeries; i++ {
-		lbs := labels.FromStrings("job", fmt.Sprintf("job-new-%d", i))
-		series = append(series, lbs)
-
-		for j := 0; j < nLogsPerSeries; j++ {
-			require.NoError(t, cliDistributor.PushLogLine(fmt.Sprintf("log line %d", j), now, nil, lbs.Map()))
-		}
-	}
+	newSeries := writeSeries(t, nSeries, nLogsPerSeries, cliDistributor, now, "job-new")
+	series = append(series, newSeries...)
 
 	// restart ingester which should flush the chunks and index
 	require.NoError(t, tIngester.Restart())
@@ -143,6 +130,33 @@ func TestBloomBuilding(t *testing.T) {
 	// Check that all series (both previous and new ones) pushed are present in the metas and blocks.
 	// This check ensures up to 1 meta per series, which tests deletion of old metas.
 	checkSeriesInBlooms(t, now, tenantID, bloomStore, series)
+}
+
+func writeSeries(t *testing.T, nSeries int, nLogsPerSeries int, cliDistributor *client.Client, now time.Time, seriesPrefix string) []labels.Labels {
+	series := make([]labels.Labels, 0, nSeries)
+	for i := 0; i < nSeries; i++ {
+		lbs := labels.FromStrings("job", fmt.Sprintf("%s-%d", seriesPrefix, i))
+		series = append(series, lbs)
+
+		for j := 0; j < nLogsPerSeries; j++ {
+			// Only write wtructured metadata for half of the series
+			var metadata map[string]string
+			if i%2 == 0 {
+				metadata = map[string]string{
+					"traceID": fmt.Sprintf("%d%d", i, j),
+					"user":    fmt.Sprintf("%d%d", i, j%10),
+				}
+			}
+
+			require.NoError(t, cliDistributor.PushLogLine(
+				fmt.Sprintf("log line %d", j),
+				now,
+				metadata,
+				lbs.Map(),
+			))
+		}
+	}
+	return series
 }
 
 func checkCompactionFinished(t *testing.T, cliCompactor *client.Client) {
@@ -222,9 +236,9 @@ func checkSeriesInBlooms(
 	series []labels.Labels,
 ) {
 	for _, lbs := range series {
-		seriesFP := model.Fingerprint(lbs.Hash())
+		seriesFP := model.Fingerprint(labels.StableHash(lbs))
 
-		metas, err := bloomStore.FetchMetas(context.Background(), bloomshipper.MetaSearchParams{
+		metas, err := bloomStore.FetchMetas(t.Context(), bloomshipper.MetaSearchParams{
 			TenantID: tenantID,
 			Interval: bloomshipper.NewInterval(model.TimeFromUnix(now.Add(-24*time.Hour).Unix()), model.TimeFromUnix(now.Unix())),
 			Keyspace: v1.NewBounds(seriesFP, seriesFP),
@@ -245,13 +259,13 @@ func checkSeriesInBlooms(
 		// Only one block should be relevant.
 		require.Len(t, relevantBlocks, 1)
 
-		queriers, err := bloomStore.FetchBlocks(context.Background(), relevantBlocks)
+		queriers, err := bloomStore.FetchBlocks(t.Context(), relevantBlocks)
 		require.NoError(t, err)
 		require.Len(t, queriers, 1)
 		querier := queriers[0]
 
 		require.NoError(t, querier.Seek(seriesFP))
-		require.Equal(t, seriesFP, querier.At().Series.Fingerprint)
+		require.Equal(t, seriesFP, querier.At().Fingerprint)
 	}
 }
 

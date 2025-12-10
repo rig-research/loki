@@ -26,13 +26,13 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unsafe"
 
 	"github.com/hashicorp/golang-lru/v2/simplelru"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-
-	"github.com/grafana/loki/v3/pkg/logproto"
 )
 
 type Config struct {
@@ -45,6 +45,12 @@ type Config struct {
 	ParamString          string
 	MaxEvictionRatio     float64
 	MaxAllowedLineLength int
+	MaxChunkAge          time.Duration
+	SampleInterval       time.Duration
+}
+
+type Limits interface {
+	PatternIngesterTokenizableJSONFields(userID string) []string
 }
 
 func createLogClusterCache(maxSize int, onEvict func(int, *LogCluster)) *LogClusterCache {
@@ -132,10 +138,12 @@ func DefaultConfig() *Config {
 		MaxClusters:          300,
 		MaxEvictionRatio:     0.25,
 		MaxAllowedLineLength: 3000,
+		MaxChunkAge:          time.Hour,
+		SampleInterval:       10 * time.Second,
 	}
 }
 
-func New(config *Config, format string, metrics *Metrics) *Drain {
+func New(tenantID string, config *Config, limits Limits, format string, metrics *Metrics) *Drain {
 	if config.LogClusterDepth < 3 {
 		panic("depth argument must be at least 3")
 	}
@@ -153,7 +161,8 @@ func New(config *Config, format string, metrics *Metrics) *Drain {
 	var tokenizer LineTokenizer
 	switch format {
 	case FormatJSON:
-		tokenizer = newJSONTokenizer(config.ParamString, config.MaxAllowedLineLength)
+		fieldsToTokenize := limits.PatternIngesterTokenizableJSONFields(tenantID)
+		tokenizer = newJSONTokenizer(config.ParamString, config.MaxAllowedLineLength, fieldsToTokenize)
 	case FormatLogfmt:
 		tokenizer = newLogfmtTokenizer(config.ParamString, config.MaxAllowedLineLength)
 	default:
@@ -198,20 +207,33 @@ func (d *Drain) Clusters() []*LogCluster {
 	return d.idToCluster.Values()
 }
 
-func (d *Drain) TrainTokens(tokens []string, stringer func([]string) string, ts int64) *LogCluster {
-	return d.train(tokens, stringer, ts)
-}
-
 func (d *Drain) Train(content string, ts int64) *LogCluster {
 	if !d.limiter.Allow() {
 		return nil
 	}
-	d.tokens, d.state = d.tokenizer.Tokenize(content, d.tokens, d.state)
-	return d.train(d.tokens, d.state, ts)
+	var linesSkipped *prometheus.CounterVec
+	if d.metrics != nil {
+		linesSkipped = d.metrics.LinesSkipped
+	}
+	d.tokens, d.state = d.tokenizer.Tokenize(content, d.tokens, d.state, linesSkipped)
+	if d.tokens == nil && d.state == nil {
+		return nil
+	}
+
+	return d.train(d.tokens, d.state, ts, int64(len(content)))
 }
 
-func (d *Drain) train(tokens []string, state interface{}, ts int64) *LogCluster {
+func (d *Drain) train(tokens []string, state any, ts int64, contentSize int64) *LogCluster {
 	if len(tokens) < 4 {
+		if d.metrics != nil && d.metrics.LinesSkipped != nil {
+			d.metrics.LinesSkipped.WithLabelValues(TooFewTokens).Inc()
+		}
+		return nil
+	}
+	if len(tokens) > 80 {
+		if d.metrics != nil && d.metrics.LinesSkipped != nil {
+			d.metrics.LinesSkipped.WithLabelValues(TooManyTokens).Inc()
+		}
 		return nil
 	}
 	if d.metrics != nil {
@@ -227,14 +249,17 @@ func (d *Drain) train(tokens []string, state interface{}, ts int64) *LogCluster 
 		clusterID := d.clustersCounter
 		tokens, state = d.tokenizer.Clone(tokens, state)
 		matchCluster = &LogCluster{
-			Tokens:     tokens,
-			TokenState: state,
-			id:         clusterID,
-			Size:       1,
-			Stringer:   d.tokenizer.Join,
-			Chunks:     Chunks{},
+			Tokens:      tokens,
+			TokenState:  state,
+			id:          clusterID,
+			Size:        1,
+			Stringer:    d.tokenizer.Join,
+			Chunks:      Chunks{},
+			Volume:      contentSize,
+			SampleCount: 1,
 		}
-		matchCluster.append(model.TimeFromUnixNano(ts))
+		modeTs := model.TimeFromUnixNano(ts)
+		matchCluster.append(modeTs, d.config.MaxChunkAge, d.config.SampleInterval)
 		d.idToCluster.Set(clusterID, matchCluster)
 		d.addSeqToPrefixTree(d.rootNode, matchCluster)
 		if d.metrics != nil {
@@ -242,34 +267,12 @@ func (d *Drain) train(tokens []string, state interface{}, ts int64) *LogCluster 
 		}
 	} else {
 		matchCluster.Tokens = d.createTemplate(tokens, matchCluster.Tokens)
-		matchCluster.append(model.TimeFromUnixNano(ts))
+		matchCluster.append(model.TimeFromUnixNano(ts), d.config.MaxChunkAge, d.config.SampleInterval)
+		matchCluster.Volume += contentSize
+		matchCluster.SampleCount++
 		// Touch cluster to update its state in the cache.
 		d.idToCluster.Get(matchCluster.id)
 	}
-	return matchCluster
-}
-
-func (d *Drain) TrainPattern(content string, samples []*logproto.PatternSample) *LogCluster {
-	tokens, state := d.tokenizer.Tokenize(content, d.tokens, d.state)
-	matchCluster := d.treeSearch(d.rootNode, tokens, d.config.SimTh, true)
-	// Match no existing log cluster
-	if matchCluster == nil {
-		d.clustersCounter++
-		clusterID := d.clustersCounter
-		tokens, state = d.tokenizer.Clone(tokens, state)
-		matchCluster = &LogCluster{
-			Tokens:     tokens,
-			TokenState: state,
-			id:         clusterID,
-		}
-		d.idToCluster.Set(clusterID, matchCluster)
-		d.addSeqToPrefixTree(d.rootNode, matchCluster)
-	} else {
-		matchCluster.Tokens = d.createTemplate(tokens, matchCluster.Tokens)
-		// Touch cluster to update its state in the cache.
-		d.idToCluster.Get(matchCluster.id)
-	}
-	matchCluster.merge(samples)
 	return matchCluster
 }
 
@@ -413,9 +416,10 @@ func (d *Drain) getSeqDistance(clusterTokens, tokens []string, includeParams boo
 		if len(token1) > 0 && token1[0] == 0 && token1 != token2 {
 			return 0, -1
 		}
-		if token1 == d.config.ParamString {
+		switch token1 {
+		case d.config.ParamString:
 			paramCount++
-		} else if token1 == token2 {
+		case token2:
 			simTokens++
 		}
 	}
@@ -525,9 +529,9 @@ func (d *Drain) createTemplate(tokens, matchClusterTokens []string) []string {
 }
 
 func unsafeString(s []byte) string {
-	return unsafe.String(unsafe.SliceData(s), len(s))
+	return unsafe.String(unsafe.SliceData(s), len(s)) // #nosec G103 -- we know the string is not mutated -- nosemgrep: use-of-unsafe-block
 }
 
 func unsafeBytes(s string) []byte {
-	return unsafe.Slice(unsafe.StringData(s), len(s))
+	return unsafe.Slice(unsafe.StringData(s), len(s)) // #nosec G103 -- we know the string is not mutated -- nosemgrep: use-of-unsafe-block
 }

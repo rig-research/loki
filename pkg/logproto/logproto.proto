@@ -352,6 +352,7 @@ message GetChunkRefRequest {
 
 message GetChunkRefResponse {
   repeated ChunkRef refs = 1;
+  stats.Index stats = 2 [(gogoproto.nullable) = false];
 }
 
 message GetSeriesRequest {
@@ -479,6 +480,7 @@ message DetectedField {
   uint64 cardinality = 3;
   repeated string parsers = 4 [(gogoproto.jsontag) = "parsers"];
   bytes sketch = 5 [(gogoproto.jsontag) = "sketch,omitempty"];
+  repeated string jsonPath = 6 [(gogoproto.jsontag) = "jsonPath,omitempty"]; // Array representing original JSON path (e.g., ["user", "id"] for field "user_id")
 }
 
 message DetectedLabelsRequest {

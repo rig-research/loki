@@ -2,46 +2,26 @@
   description = "Grafana Loki";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  # Nixpkgs / NixOS version to use.
-
   outputs = { self, nixpkgs, flake-utils }:
-    let
-      nix = import ./nix { inherit self; };
-    in
-    {
-      overlays = {
-        default = nix.overlay;
-      };
-    } //
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [
-            nix.overlay
-          ];
-          config = { allowUnfree = true; };
-        };
+        pkgs = import nixpkgs
+          {
+            inherit system;
+            config = { allowUnfree = true; };
+          };
       in
-      {
-        # The default package for 'nix build'. This makes sense if the
-        # flake provides only one package or there is a clear "main"
-        # package.
-        defaultPackage = pkgs.loki;
-
-        packages = with pkgs; {
-          inherit
-            logcli
-            loki
-            loki-canary
-            loki-helm-test
-            loki-helm-test-docker
-            promtail;
+      rec {
+        packages = import ./nix {
+          inherit self pkgs;
+          inherit (pkgs) lib;
         };
+
+        defaultPackage = packages.loki;
 
         apps = {
           lint = {
@@ -53,24 +33,6 @@
                 '')
               }/bin/lint.sh";
           };
-
-          test = {
-            type = "app";
-            program = with pkgs; "${
-                (writeShellScriptBin "test.sh" ''
-                  ${loki.overrideAttrs(old: { 
-                  buildInputs =
-                    let
-                      inherit (old) buildInputs;
-                    in
-                    if pkgs.stdenv.hostPlatform.isLinux then
-                      buildInputs ++ (with pkgs; [ systemd ])
-                    else buildInputs;
-                  doCheck = true; 
-                  })}/bin/loki --version
-                '')
-              }/bin/test.sh";
-          };
         };
 
         devShell = pkgs.mkShell {
@@ -80,13 +42,9 @@
               inherit (pkgs) buildGoModule fetchFromGitHub;
             })
 
-            (pkgs.callPackage ./nix/packages/faillint.nix {
-              inherit (pkgs) lib buildGoModule fetchFromGitHub;
-            })
-
             chart-testing
             gcc
-            go
+            go_1_25
             golangci-lint
             gotools
             helm-docs
@@ -94,7 +52,7 @@
             nixpkgs-fmt
             statix
             yamllint
-          ];
+          ] ++ (builtins.attrValues packages);
         };
       });
 }

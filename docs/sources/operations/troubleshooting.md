@@ -1,12 +1,12 @@
 ---
-title: Troubleshooting Loki
-menuTitle:  Troubleshooting
-description: Describes how to troubleshoot Grafana Loki.
+title: Manage and debug errors
+menuTitle: Troubleshooting
+description: Describes how to troubleshoot and debug specific errors in Grafana Loki.
 weight: 
 aliases:
     - /docs/loki/latest/getting-started/troubleshooting/
 ---
-# Troubleshooting Loki
+# Manage and debug errors
 
 ## "Loki: Bad Gateway. 502"
 
@@ -61,8 +61,12 @@ can have many possible causes.
 - Check your Loki deployment.
 If you have a reverse proxy in front of Loki, that is, between Loki and Grafana, then check any configured timeouts, such as an NGINX proxy read timeout.
 
+- Add a startup probe to your read pod
+This will ensure your Loki read pods setup the connection to other Loki components correctly after a deployment. This seems mostly a problem in OpenStack infrastructure using Cilium networking
+  - Also setting `socketLB.hostNamespaceOnly=true` might help with the issue.
+
 - Other causes.  To determine if the issue is related to Loki itself or another system such as Grafana or a client-side error,
-attempt to run a [LogCLI]({{< relref "../query/logcli" >}}) query in as direct a manner as you can. For example, if running on virtual machines, run the query on the local machine. If running in a Kubernetes cluster, then port forward the Loki HTTP port, and attempt to run the query there. If you do not get a timeout, then consider these causes:
+attempt to run a [LogCLI](../../query/logcli/) query in as direct a manner as you can. For example, if running on virtual machines, run the query on the local machine. If running in a Kubernetes cluster, then port forward the Loki HTTP port, and attempt to run the query there. If you do not get a timeout, then consider these causes:
 
     - Adjust the [Grafana dataproxy timeout](/docs/grafana/latest/administration/configuration/#dataproxy). Configure Grafana with a large enough dataproxy timeout.
     - Check timeouts for reverse proxies or load balancers between your client and Grafana. Queries to Grafana are made from the your local browser with Grafana serving as a proxy (a dataproxy). Therefore, connections from your client to Grafana must have their timeout configured as well.
@@ -163,22 +167,6 @@ sure Promtail is tailing the logs you would expect.
 
 You can check the Promtail log by looking in `/var/log/containers` at the
 Promtail container log.
-
-## Enable tracing for Loki
-
-Loki can be traced using [Jaeger](https://www.jaegertracing.io/) by setting
-the environment variable `JAEGER_AGENT_HOST` to the hostname and port where
-Jaeger is running.
-
-If you deploy with Helm, use the following command:
-
-```bash
-$ helm upgrade --install loki loki/loki --set "loki.tracing.enabled=true"
-  --set "read.extraEnv[0].name=JAEGER_AGENT_HOST"    --set "read.extraEnv[0].value=<JAEGER_AGENT_HOST>"
-  --set "write.extraEnv[0].name=JAEGER_AGENT_HOST"   --set "write.extraEnv[0].value=<JAEGER_AGENT_HOST>"
-  --set "backend.extraEnv[0].name=JAEGER_AGENT_HOST" --set "backend.extraEnv[0].value=<JAEGER_AGENT_HOST>"
-  --set "gateway.extraEnv[0].name=JAEGER_AGENT_HOST" --set "gateway.extraEnv[0].value=<JAEGER_AGENT_HOST>"
-```
 
 ## Running Loki with Istio Sidecars
 

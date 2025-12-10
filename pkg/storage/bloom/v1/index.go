@@ -102,6 +102,7 @@ func (b *BlockIndex) NewSeriesPageDecoder(r io.ReadSeeker, header SeriesPageHead
 	if err != nil {
 		return nil, errors.Wrap(err, "getting decompressor")
 	}
+	defer b.opts.Schema.DecompressorPool().PutReader(decompressor)
 
 	decompressed := make([]byte, header.DecompressedLen)
 	if _, err = io.ReadFull(decompressor, decompressed); err != nil {
@@ -153,7 +154,8 @@ func aggregateHeaders(xs []SeriesHeader) SeriesHeader {
 	fromFp, _ := xs[0].Bounds.Bounds()
 	_, throughFP := xs[len(xs)-1].Bounds.Bounds()
 	res := SeriesHeader{
-		Bounds: NewBounds(fromFp, throughFP),
+		NumSeries: len(xs),
+		Bounds:    NewBounds(fromFp, throughFP),
 	}
 
 	for i, x := range xs {

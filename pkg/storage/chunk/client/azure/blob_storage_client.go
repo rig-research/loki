@@ -347,7 +347,7 @@ func (b *BlobStorage) PutObject(ctx context.Context, objectKey string, object io
 }
 
 func (b *BlobStorage) getBlobURL(blobID string, hedging bool) (azblob.BlockBlobURL, error) {
-	blobID = strings.Replace(blobID, ":", b.cfg.ChunkDelimiter, -1)
+	blobID = strings.ReplaceAll(blobID, ":", b.cfg.ChunkDelimiter)
 
 	// generate url for new chunk blob
 	u, err := url.Parse(b.fmtBlobURL(blobID))
@@ -474,6 +474,10 @@ func (b *BlobStorage) getServicePrincipalToken(authFunctions authFunctions) (*ad
 
 	if b.cfg.UseFederatedToken {
 		token, err := b.servicePrincipalTokenFromFederatedToken(resource, authFunctions.NewOAuthConfigFunc, authFunctions.NewServicePrincipalTokenFromFederatedTokenFunc)
+		if err != nil {
+			return nil, err
+		}
+
 		var customRefreshFunc adal.TokenRefresh = func(_ context.Context, resource string) (*adal.Token, error) {
 			newToken, err := b.servicePrincipalTokenFromFederatedToken(resource, authFunctions.NewOAuthConfigFunc, authFunctions.NewServicePrincipalTokenFromFederatedTokenFunc)
 			if err != nil {

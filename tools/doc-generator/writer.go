@@ -52,7 +52,11 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) (written
 			}
 
 			// Block reference without entries, because it's a root block
-			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.Block.Name + ">]\n")
+			if e.Inline {
+				w.out.WriteString(pad(indent) + "[<" + e.Block.Name + ">]\n")
+			} else {
+				w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.Block.Name + ">]\n")
+			}
 		} else {
 			// Description
 			w.writeComment(e.BlockDesc, indent, 0)
@@ -78,9 +82,10 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) (written
 
 		// Specification
 		fieldDefault := e.FieldDefault
-		if e.FieldType == "string" {
+		switch e.FieldType {
+		case "string":
 			fieldDefault = strconv.Quote(fieldDefault)
-		} else if e.FieldType == "duration" {
+		case "duration":
 			fieldDefault = cleanupDuration(fieldDefault)
 		}
 

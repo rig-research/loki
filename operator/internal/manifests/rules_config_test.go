@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	lokiv1 "github.com/grafana/loki/operator/apis/loki/v1"
+	lokiv1 "github.com/grafana/loki/operator/api/loki/v1"
 )
 
 func TestRulesConfigMap_ReturnsDataEntriesPerRule(t *testing.T) {
@@ -140,7 +140,7 @@ func testOptions_withSharding() *Options {
 	// and 2000 of them will be split into 2 shards
 	var alertingRules []lokiv1.AlertingRule
 
-	for i := 0; i < 2000; i++ {
+	for i := range 2000 {
 		alertingRules = append(alertingRules, lokiv1.AlertingRule{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "alerting-rules",

@@ -120,7 +120,7 @@ func TestBatchedLoader(t *testing.T) {
 				)
 			}
 
-			loader := newBatchedLoader[int, int, int](
+			loader := newBatchedLoader(
 				tc.ctx,
 				fetchers,
 				tc.inputs,
@@ -128,7 +128,7 @@ func TestBatchedLoader(t *testing.T) {
 				tc.batchSize,
 			)
 
-			got, err := v2.Collect[int](loader)
+			got, err := v2.Collect(loader)
 			if tc.err {
 				require.Error(t, err)
 				return
@@ -209,8 +209,8 @@ func TestOverlappingBlocksIter(t *testing.T) {
 	}
 }
 
-func genBlockRef(min, max model.Fingerprint) bloomshipper.BlockRef {
-	bounds := v1.NewBounds(min, max)
+func genBlockRef(minVal, maxVal model.Fingerprint) bloomshipper.BlockRef {
+	bounds := v1.NewBounds(minVal, maxVal)
 	return bloomshipper.BlockRef{
 		Ref: bloomshipper.Ref{
 			Bounds: bounds,

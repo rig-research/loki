@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -77,11 +77,11 @@ func NewSyncerFromScrapeConfig(
 
 	switch cfg.KafkaConfig.Assignor {
 	case sarama.StickyBalanceStrategyName:
-		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategySticky
+		config.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategySticky()
 	case sarama.RoundRobinBalanceStrategyName:
-		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
+		config.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRoundRobin()
 	case sarama.RangeBalanceStrategyName, "":
-		config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
+		config.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRange()
 	default:
 		return nil, fmt.Errorf("unrecognized consumer group partition assignor: %s", cfg.KafkaConfig.Assignor)
 	}
@@ -358,7 +358,7 @@ func (ts *TargetSyncer) NewTarget(session sarama.ConsumerGroupSession, claim sar
 
 func validateConfig(cfg *scrapeconfig.Config) error {
 	if cfg.KafkaConfig == nil {
-		return errors.New("Kafka configuration is empty")
+		return errors.New("the Kafka configuration is empty")
 	}
 	if cfg.KafkaConfig.Version == "" {
 		cfg.KafkaConfig.Version = "2.1.1"

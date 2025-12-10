@@ -141,6 +141,7 @@ func (cl *Client) Close() {
 // have timeout fields:
 //
 //	Produce
+//	ListOffsets (Kafka 4+, relevant for tiered storage listing)
 //	CreateTopics
 //	DeleteTopics
 //	DeleteRecords
@@ -189,6 +190,16 @@ type Offset struct {
 	At          int64  // Offset is the partition to set.
 	LeaderEpoch int32  // LeaderEpoch is the broker leader epoch of the record at this offset.
 	Metadata    string // Metadata, if non-empty, is used for offset commits.
+}
+
+// NewOffsetFromRecord is a helper to create an Offset for a given Record
+func NewOffsetFromRecord(record *kgo.Record) Offset {
+	return Offset{
+		Topic:       record.Topic,
+		Partition:   record.Partition,
+		At:          record.Offset + 1,
+		LeaderEpoch: record.LeaderEpoch,
+	}
 }
 
 // Partitions wraps many partitions.
@@ -315,7 +326,7 @@ func (os Offsets) DeleteFunc(fn func(o Offset) bool) {
 	os.KeepFunc(func(o Offset) bool { return !fn(o) })
 }
 
-// Topics returns the set of topics and partitions currently used in these
+// TopicsSet returns the set of topics and partitions currently used in these
 // offsets.
 func (os Offsets) TopicsSet() TopicsSet {
 	s := make(TopicsSet)
@@ -372,7 +383,7 @@ func OffsetsFromFetches(fs kgo.Fetches) Offsets {
 			return
 		}
 		r := p.Records[len(p.Records)-1]
-		os.AddOffset(r.Topic, r.Partition, r.Offset+1, r.LeaderEpoch)
+		os.Add(NewOffsetFromRecord(r))
 	})
 	return os
 }
@@ -383,7 +394,7 @@ func OffsetsFromFetches(fs kgo.Fetches) Offsets {
 func OffsetsFromRecords(rs ...kgo.Record) Offsets {
 	os := make(Offsets)
 	for _, r := range rs {
-		os.AddOffset(r.Topic, r.Partition, r.Offset+1, r.LeaderEpoch)
+		os.Add(NewOffsetFromRecord(&r))
 	}
 	return os
 }
@@ -487,6 +498,13 @@ func (s TopicsSet) Merge(other TopicsSet) {
 		for p := range ps {
 			s.Add(t, p)
 		}
+	}
+}
+
+// MergeTopics topics merges topic names into this set.
+func (s TopicsSet) MergeTopics(ts []string) {
+	for _, t := range ts {
+		s.Add(t)
 	}
 }
 

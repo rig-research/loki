@@ -13,9 +13,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/loki/v3/pkg/compression"
 	v1 "github.com/grafana/loki/v3/pkg/storage/bloom/v1"
@@ -225,13 +226,16 @@ func newBlockRefWithEncoding(ref Ref, enc compression.Codec) BlockRef {
 }
 
 func BlockFrom(enc compression.Codec, tenant, table string, blk *v1.Block) (Block, error) {
-	md, _ := blk.Metadata()
+	md, err := blk.Metadata()
+	if err != nil {
+		return Block{}, errors.Wrap(err, "decoding index")
+	}
+
 	ref := newBlockRefWithEncoding(newRefFrom(tenant, table, md), enc)
 
 	// TODO(owen-d): pool
 	buf := bytes.NewBuffer(nil)
-	err := v1.TarCompress(ref.Codec, buf, blk.Reader())
-
+	err = v1.TarCompress(ref.Codec, buf, blk.Reader())
 	if err != nil {
 		return Block{}, err
 	}
@@ -500,12 +504,12 @@ func (c *cachedListOpObjectClient) List(ctx context.Context, prefix string, deli
 		cacheDur time.Duration
 	)
 	defer func() {
-		if sp := opentracing.SpanFromContext(ctx); sp != nil {
-			sp.LogKV(
-				"cache_duration", cacheDur,
-				"total_duration", time.Since(start),
-			)
-		}
+		sp := trace.SpanFromContext(ctx)
+		sp.SetAttributes(
+			attribute.String("cache_duration", cacheDur.String()),
+			attribute.String("total_duration", time.Since(start).String()),
+		)
+
 	}()
 
 	if delimiter != "" {

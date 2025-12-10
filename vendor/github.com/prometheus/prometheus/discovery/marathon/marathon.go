@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net"
 	"net/http"
@@ -27,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -80,7 +80,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &marathonMetrics{
 		refreshMetrics: rmi,
 	}
@@ -101,7 +101,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -140,10 +140,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*marathonMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
@@ -513,7 +513,7 @@ func extractPortMapping(portMappings []portMapping, containerNet bool) ([]uint32
 	ports := make([]uint32, len(portMappings))
 	labels := make([]map[string]string, len(portMappings))
 
-	for i := 0; i < len(portMappings); i++ {
+	for i := range portMappings {
 		labels[i] = portMappings[i].Labels
 
 		if containerNet {

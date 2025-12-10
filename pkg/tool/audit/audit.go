@@ -17,10 +17,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/compactor"
 	"github.com/grafana/loki/v3/pkg/compactor/retention"
 	"github.com/grafana/loki/v3/pkg/storage"
-	loki_storage "github.com/grafana/loki/v3/pkg/storage"
 	"github.com/grafana/loki/v3/pkg/storage/chunk/client"
 	indexshipper_storage "github.com/grafana/loki/v3/pkg/storage/stores/shipper/indexshipper/storage"
-	shipperutil "github.com/grafana/loki/v3/pkg/storage/stores/shipper/indexshipper/storage"
 	"github.com/grafana/loki/v3/pkg/storage/stores/shipper/indexshipper/tsdb"
 	util_log "github.com/grafana/loki/v3/pkg/util/log"
 )
@@ -53,8 +51,7 @@ func Run(ctx context.Context, cloudIndexPath, table string, cfg Config, logger l
 
 func GetObjectClient(cfg Config) (client.ObjectClient, error) {
 	periodCfg := cfg.SchemaConfig.Configs[len(cfg.SchemaConfig.Configs)-1] // only check the last period.
-
-	objClient, err := loki_storage.NewObjectClient(periodCfg.ObjectType, cfg.StorageConfig, storage.NewClientMetrics())
+	objClient, err := storage.NewObjectClient(periodCfg.ObjectType, "tool-audit", cfg.StorageConfig, storage.NewClientMetrics())
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create object client: %w", err)
 	}
@@ -71,7 +68,7 @@ func DownloadIndexFile(ctx context.Context, cfg Config, cloudIndexPath string, o
 		localFileName = strings.TrimSuffix(localFileName, path.Ext(localFileName))
 	}
 	localFilePath := path.Join(cfg.WorkingDir, localFileName)
-	if err := shipperutil.DownloadFileFromStorage(localFilePath, decompress, false, logger, func() (io.ReadCloser, error) {
+	if err := indexshipper_storage.DownloadFileFromStorage(localFilePath, decompress, false, logger, func() (io.ReadCloser, error) {
 		r, _, err := objClient.GetObject(ctx, cloudIndexPath)
 		return r, err
 	}); err != nil {
@@ -103,20 +100,22 @@ func ValidateCompactedIndex(ctx context.Context, objClient client.ObjectClient, 
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(parallelism)
-	compactedIdx.ForEachChunk(ctx, func(ce retention.ChunkEntry) (deleteChunk bool, err error) { //nolint:errcheck
+	compactedIdx.ForEachSeries(ctx, func(s retention.Series) (err error) { //nolint:errcheck
 		bar.Add(1) // nolint:errcheck
 		g.Go(func() error {
-			exists, err := CheckChunkExistance(string(ce.ChunkID), objClient)
-			if err != nil || !exists {
-				missingChunks.Add(1)
-				logger.Log("msg", "chunk is missing", "err", err, "chunk_id", string(ce.ChunkID))
-				return nil
+			for _, c := range s.Chunks() {
+				exists, err := CheckChunkExistance(c.ChunkID, objClient)
+				if err != nil || !exists {
+					missingChunks.Add(1)
+					logger.Log("msg", "chunk is missing", "err", err, "chunk_id", c.ChunkID)
+					return nil
+				}
+				foundChunks.Add(1)
 			}
-			foundChunks.Add(1)
 			return nil
 		})
 
-		return false, nil
+		return nil
 	})
 	g.Wait() // nolint:errcheck
 

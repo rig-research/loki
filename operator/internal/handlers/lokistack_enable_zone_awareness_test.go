@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	lokiv1 "github.com/grafana/loki/operator/apis/loki/v1"
+	lokiv1 "github.com/grafana/loki/operator/api/loki/v1"
 	"github.com/grafana/loki/operator/internal/external/k8s/k8sfakes"
 )
 
@@ -88,8 +88,8 @@ func TestAnnotatePodWithAvailabilityZone_WhenGetReturnsNode_DoesNotError(t *test
 		return kverrors.New("failed to lookup node")
 	}
 
-	expectedPatch, _ := json.Marshal(map[string]interface{}{
-		"metadata": map[string]interface{}{
+	expectedPatch, _ := json.Marshal(map[string]any{
+		"metadata": map[string]any{
 			"annotations": map[string]string{
 				lokiv1.AnnotationAvailabilityZone: "test-node_us-east-2c_us-east-2",
 			},

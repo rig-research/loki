@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/grafana/loki/v3/pkg/logqlmodel/metadata"
 
@@ -253,11 +254,13 @@ Outer:
 		heap.Pop(i.heap)
 		previous := i.buffer
 		var dupe bool
-		for _, t := range previous {
-			if t.Sample.Hash == sample.Hash {
-				i.stats.AddDuplicates(1)
-				dupe = true
-				break
+		if sample.Hash != 0 {
+			for _, t := range previous {
+				if t.Hash == sample.Hash {
+					i.stats.AddDuplicates(1)
+					dupe = true
+					break
+				}
 			}
 		}
 		if !dupe {
@@ -277,10 +280,12 @@ Outer:
 				sample.Timestamp != i.buffer[0].Timestamp {
 				break
 			}
-			for _, t := range previous {
-				if t.Hash == sample.Hash {
-					i.stats.AddDuplicates(1)
-					continue inner
+			if sample.Hash != 0 {
+				for _, t := range previous {
+					if t.Hash == sample.Hash {
+						i.stats.AddDuplicates(1)
+						continue inner
+					}
 				}
 			}
 			i.buffer = append(i.buffer, sampleWithLabels{
@@ -482,7 +487,9 @@ func NewSampleQueryClientIterator(client QuerySampleClient) SampleIterator {
 func (i *sampleQueryClientIterator) Next() bool {
 	ctx := i.client.Context()
 	for i.curr == nil || !i.curr.Next() {
+		start := time.Now()
 		batch, err := i.client.Recv()
+		stats.FromContext(ctx).AddIngesterRecvWait(time.Since(start))
 		if err == io.EOF {
 			return false
 		} else if err != nil {
@@ -683,7 +690,7 @@ func NewTimeRangedSampleIterator(it SampleIterator, mint, maxt int64) SampleIter
 func (i *timeRangedSampleIterator) Next() bool {
 	ok := i.SampleIterator.Next()
 	if !ok {
-		i.SampleIterator.Close()
+		i.Close()
 		return ok
 	}
 	ts := i.SampleIterator.At().Timestamp
@@ -703,7 +710,7 @@ func (i *timeRangedSampleIterator) Next() bool {
 		}
 	}
 	if !ok {
-		i.SampleIterator.Close()
+		i.Close()
 	}
 	return ok
 }

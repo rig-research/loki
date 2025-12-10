@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
@@ -59,7 +59,7 @@ func (c *consumer) start(ctx context.Context, topics []string) {
 		for {
 			// Calling Consume in an infinite loop in case rebalancing is kicking in.
 			// In which case all claims will be renewed.
-			err := c.ConsumerGroup.Consume(c.ctx, topics, c)
+			err := c.Consume(c.ctx, topics, c)
 			if err != nil && err != context.Canceled {
 				level.Error(c.logger).Log("msg", "error from the consumer, retrying...", "err", err)
 				// backoff before re-trying.

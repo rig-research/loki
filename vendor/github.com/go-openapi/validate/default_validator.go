@@ -29,6 +29,18 @@ type defaultValidator struct {
 	schemaOptions  *SchemaValidatorOptions
 }
 
+// Validate validates the default values declared in the swagger spec
+func (d *defaultValidator) Validate() *Result {
+	errs := pools.poolOfResults.BorrowResult() // will redeem when merged
+
+	if d == nil || d.SpecValidator == nil {
+		return errs
+	}
+	d.resetVisited()
+	errs.Merge(d.validateDefaultValueValidAgainstSchema()) // error -
+	return errs
+}
+
 // resetVisited resets the internal state of visited schemas
 func (d *defaultValidator) resetVisited() {
 	if d.visitedSchemas == nil {
@@ -54,7 +66,8 @@ func isVisited(path string, visitedSchemas map[string]struct{}) bool {
 		parent string
 		suffix string
 	)
-	for i := len(path) - 2; i >= 0; i-- {
+	const backtrackFromEnd = 2
+	for i := len(path) - backtrackFromEnd; i >= 0; i-- {
 		r := path[i]
 		if r != '.' {
 			continue
@@ -81,23 +94,11 @@ func (d *defaultValidator) isVisited(path string) bool {
 	return isVisited(path, d.visitedSchemas)
 }
 
-// Validate validates the default values declared in the swagger spec
-func (d *defaultValidator) Validate() *Result {
-	errs := poolOfResults.BorrowResult() // will redeem when merged
-
-	if d == nil || d.SpecValidator == nil {
-		return errs
-	}
-	d.resetVisited()
-	errs.Merge(d.validateDefaultValueValidAgainstSchema()) // error -
-	return errs
-}
-
 func (d *defaultValidator) validateDefaultValueValidAgainstSchema() *Result {
 	// every default value that is specified must validate against the schema for that property
 	// headers, items, parameters, schema
 
-	res := poolOfResults.BorrowResult() // will redeem when merged
+	res := pools.poolOfResults.BorrowResult() // will redeem when merged
 	s := d.SpecValidator
 
 	for method, pathItem := range s.expandedAnalyzer().Operations() {
@@ -119,6 +120,8 @@ func (d *defaultValidator) validateDefaultValueValidAgainstSchema() *Result {
 					if red.HasErrorsOrWarnings() {
 						res.AddErrors(defaultValueDoesNotValidateMsg(param.Name, param.In))
 						res.Merge(red)
+					} else if red.wantsRedeemOnMerge {
+						pools.poolOfResults.RedeemResult(red)
 					}
 				}
 
@@ -128,6 +131,8 @@ func (d *defaultValidator) validateDefaultValueValidAgainstSchema() *Result {
 					if red.HasErrorsOrWarnings() {
 						res.AddErrors(defaultValueItemsDoesNotValidateMsg(param.Name, param.In))
 						res.Merge(red)
+					} else if red.wantsRedeemOnMerge {
+						pools.poolOfResults.RedeemResult(red)
 					}
 				}
 
@@ -137,6 +142,8 @@ func (d *defaultValidator) validateDefaultValueValidAgainstSchema() *Result {
 					if red.HasErrorsOrWarnings() {
 						res.AddErrors(defaultValueDoesNotValidateMsg(param.Name, param.In))
 						res.Merge(red)
+					} else if red.wantsRedeemOnMerge {
+						pools.poolOfResults.RedeemResult(red)
 					}
 				}
 			}
@@ -162,7 +169,7 @@ func (d *defaultValidator) validateDefaultValueValidAgainstSchema() *Result {
 		// reset explored schemas to get depth-first recursive-proof exploration
 		d.resetVisited()
 		for nm, sch := range s.spec.Spec().Definitions {
-			res.Merge(d.validateDefaultValueSchemaAgainstSchema(fmt.Sprintf("definitions.%s", nm), "body", &sch)) //#nosec
+			res.Merge(d.validateDefaultValueSchemaAgainstSchema("definitions."+nm, "body", &sch)) //#nosec
 		}
 	}
 	return res
@@ -188,6 +195,8 @@ func (d *defaultValidator) validateDefaultInResponse(resp *spec.Response, respon
 				if red.HasErrorsOrWarnings() {
 					res.AddErrors(defaultValueHeaderDoesNotValidateMsg(operationID, nm, responseName))
 					res.Merge(red)
+				} else if red.wantsRedeemOnMerge {
+					pools.poolOfResults.RedeemResult(red)
 				}
 			}
 
@@ -197,6 +206,8 @@ func (d *defaultValidator) validateDefaultInResponse(resp *spec.Response, respon
 				if red.HasErrorsOrWarnings() {
 					res.AddErrors(defaultValueHeaderItemsDoesNotValidateMsg(operationID, nm, responseName))
 					res.Merge(red)
+				} else if red.wantsRedeemOnMerge {
+					pools.poolOfResults.RedeemResult(red)
 				}
 			}
 
@@ -216,6 +227,8 @@ func (d *defaultValidator) validateDefaultInResponse(resp *spec.Response, respon
 			// Additional message to make sure the context of the error is not lost
 			res.AddErrors(defaultValueInDoesNotValidateMsg(operationID, responseName))
 			res.Merge(red)
+		} else if red.wantsRedeemOnMerge {
+			pools.poolOfResults.RedeemResult(red)
 		}
 	}
 	return res
@@ -227,7 +240,7 @@ func (d *defaultValidator) validateDefaultValueSchemaAgainstSchema(path, in stri
 		return nil
 	}
 	d.beingVisited(path)
-	res := poolOfResults.BorrowResult()
+	res := pools.poolOfResults.BorrowResult()
 	s := d.SpecValidator
 
 	if schema.Default != nil {
@@ -251,7 +264,7 @@ func (d *defaultValidator) validateDefaultValueSchemaAgainstSchema(path, in stri
 	}
 	if schema.AdditionalItems != nil && schema.AdditionalItems.Schema != nil {
 		// NOTE: we keep validating values, even though additionalItems is not supported by Swagger 2.0 (and 3.0 as well)
-		res.Merge(d.validateDefaultValueSchemaAgainstSchema(fmt.Sprintf("%s.additionalItems", path), in, schema.AdditionalItems.Schema))
+		res.Merge(d.validateDefaultValueSchemaAgainstSchema(path+".additionalItems", in, schema.AdditionalItems.Schema))
 	}
 	for propName, prop := range schema.Properties {
 		res.Merge(d.validateDefaultValueSchemaAgainstSchema(path+"."+propName, in, &prop)) //#nosec
@@ -260,7 +273,7 @@ func (d *defaultValidator) validateDefaultValueSchemaAgainstSchema(path, in stri
 		res.Merge(d.validateDefaultValueSchemaAgainstSchema(path+"."+propName, in, &prop)) //#nosec
 	}
 	if schema.AdditionalProperties != nil && schema.AdditionalProperties.Schema != nil {
-		res.Merge(d.validateDefaultValueSchemaAgainstSchema(fmt.Sprintf("%s.additionalProperties", path), in, schema.AdditionalProperties.Schema))
+		res.Merge(d.validateDefaultValueSchemaAgainstSchema(path+".additionalProperties", in, schema.AdditionalProperties.Schema))
 	}
 	if schema.AllOf != nil {
 		for i, aoSch := range schema.AllOf {
@@ -272,8 +285,8 @@ func (d *defaultValidator) validateDefaultValueSchemaAgainstSchema(path, in stri
 
 // TODO: Temporary duplicated code. Need to refactor with examples
 
-func (d *defaultValidator) validateDefaultValueItemsAgainstSchema(path, in string, root interface{}, items *spec.Items) *Result {
-	res := poolOfResults.BorrowResult()
+func (d *defaultValidator) validateDefaultValueItemsAgainstSchema(path, in string, root any, items *spec.Items) *Result {
+	res := pools.poolOfResults.BorrowResult()
 	s := d.SpecValidator
 	if items != nil {
 		if items.Default != nil {

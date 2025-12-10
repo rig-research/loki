@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -12,10 +13,10 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/loki/v3/integration/client"
@@ -73,31 +74,31 @@ func TestMicroServicesIngestQuery(t *testing.T) {
 	require.NoError(t, clu.Run())
 
 	// the run querier.
-	var (
-		tQuerier = clu.AddComponent(
-			"querier",
-			"-target=querier",
-			"-querier.scheduler-address="+tQueryScheduler.GRPCURL(),
-			"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
-			"-common.compactor-address="+tCompactor.HTTPURL(),
-		)
+
+	tQuerier := clu.AddComponent(
+		"querier",
+		"-target=querier",
+		"-querier.scheduler-address="+tQueryScheduler.GRPCURL(),
+		"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
+		"-common.compactor-address="+tCompactor.HTTPURL(),
 	)
+
 	require.NoError(t, clu.Run())
 
 	// finally, run the query-frontend.
-	var (
-		tQueryFrontend = clu.AddComponent(
-			"query-frontend",
-			"-target=query-frontend",
-			"-frontend.scheduler-address="+tQueryScheduler.GRPCURL(),
-			"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
-			"-common.compactor-address="+tCompactor.HTTPURL(),
-			"-querier.per-request-limits-enabled=true",
-			"-frontend.encoding=protobuf",
-			"-querier.shard-aggregations=quantile_over_time",
-			"-frontend.tail-proxy-url="+tQuerier.HTTPURL(),
-		)
+
+	tQueryFrontend := clu.AddComponent(
+		"query-frontend",
+		"-target=query-frontend",
+		"-frontend.scheduler-address="+tQueryScheduler.GRPCURL(),
+		"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
+		"-common.compactor-address="+tCompactor.HTTPURL(),
+		"-querier.per-request-limits-enabled=true",
+		"-frontend.encoding=protobuf",
+		"-querier.shard-aggregations=quantile_over_time,approx_topk",
+		"-frontend.tail-proxy-url="+tQuerier.HTTPURL(),
 	)
+
 	require.NoError(t, clu.Run())
 
 	tenantID := randStringRunes()
@@ -489,7 +490,6 @@ func TestMicroServicesIngestQueryOverMultipleBucketSingleProvider(t *testing.T) 
 				// ingest logs to the current period
 				require.NoError(t, cliDistributor.PushLogLine("lineC", now, nil, map[string]string{"job": "fake"}))
 				require.NoError(t, cliDistributor.PushLogLine("lineD", now, nil, map[string]string{"job": "fake"}))
-
 			})
 
 			t.Run("query-lookback-default", func(t *testing.T) {
@@ -532,7 +532,6 @@ func TestMicroServicesIngestQueryOverMultipleBucketSingleProvider(t *testing.T) 
 
 				assert.ElementsMatch(t, []string{"lineA", "lineB", "lineC", "lineD"}, lines)
 			})
-
 		})
 	}
 }
@@ -751,7 +750,7 @@ func TestOTLPLogsIngestQuery(t *testing.T) {
 		numLinesReceived := 0
 		for i, stream := range resp.Data.Stream {
 			switch i {
-			case 0:
+			case 2:
 				require.Len(t, stream.Values, 2)
 				require.Equal(t, "lineD", stream.Values[0][1])
 				require.Equal(t, "lineB", stream.Values[1][1])
@@ -768,7 +767,7 @@ func TestOTLPLogsIngestQuery(t *testing.T) {
 					"user_id":      "2",
 				}, stream.Stream)
 				numLinesReceived++
-			case 2:
+			case 0:
 				require.Len(t, stream.Values, 1)
 				require.Equal(t, "lineC", stream.Values[0][1])
 				require.Equal(t, map[string]string{
@@ -781,6 +780,115 @@ func TestOTLPLogsIngestQuery(t *testing.T) {
 			}
 		}
 		require.Equal(t, 4, numLinesReceived)
+	})
+}
+
+func TestProbabilisticQuery(t *testing.T) {
+	clu := cluster.New(nil, cluster.SchemaWithTSDBAndTSDB, func(c *cluster.Cluster) {
+		c.SetSchemaVer("v13")
+	})
+	defer func() {
+		assert.NoError(t, clu.Cleanup())
+	}()
+
+	// run initially the compactor, indexgateway, and distributor.
+	var (
+		tCompactor = clu.AddComponent(
+			"compactor",
+			"-target=compactor",
+			"-compactor.compaction-interval=1s",
+			"-compactor.retention-delete-delay=1s",
+			// By default, a minute is added to the delete request start time. This compensates for that.
+			"-compactor.delete-request-cancel-period=-60s",
+			"-compactor.deletion-mode=filter-and-delete",
+		)
+		tIndexGateway = clu.AddComponent(
+			"index-gateway",
+			"-target=index-gateway",
+		)
+		tDistributor = clu.AddComponent(
+			"distributor",
+			"-target=distributor",
+		)
+	)
+	require.NoError(t, clu.Run())
+
+	// then, run only the ingester and query scheduler.
+	var (
+		tIngester = clu.AddComponent(
+			"ingester",
+			"-target=ingester",
+			"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
+		)
+		tQueryScheduler = clu.AddComponent(
+			"query-scheduler",
+			"-target=query-scheduler",
+			"-query-scheduler.use-scheduler-ring=false",
+			"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
+		)
+	)
+	require.NoError(t, clu.Run())
+
+	// the run querier.
+
+	tQuerier := clu.AddComponent(
+		"querier",
+		"-target=querier",
+		"-querier.scheduler-address="+tQueryScheduler.GRPCURL(),
+		"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
+		"-common.compactor-address="+tCompactor.HTTPURL(),
+	)
+
+	require.NoError(t, clu.Run())
+
+	// finally, run the query-frontend.
+
+	tQueryFrontend := clu.AddComponent(
+		"query-frontend",
+		"-target=query-frontend",
+		"-frontend.scheduler-address="+tQueryScheduler.GRPCURL(),
+		"-boltdb.shipper.index-gateway-client.server-address="+tIndexGateway.GRPCURL(),
+		"-common.compactor-address="+tCompactor.HTTPURL(),
+		"-querier.per-request-limits-enabled=true",
+		"-frontend.encoding=protobuf",
+		"-querier.shard-aggregations=quantile_over_time,approx_topk",
+		"-frontend.tail-proxy-url="+tQuerier.HTTPURL(),
+	)
+
+	require.NoError(t, clu.Run())
+
+	tenantID := randStringRunes()
+
+	now := time.Now()
+	cliDistributor := client.New(tenantID, "", tDistributor.HTTPURL())
+	cliDistributor.Now = now
+	cliIngester := client.New(tenantID, "", tIngester.HTTPURL())
+	cliIngester.Now = now
+	cliQueryFrontend := client.New(tenantID, "", tQueryFrontend.HTTPURL())
+	cliQueryFrontend.Now = now
+
+	t.Run("ingest-logs", func(t *testing.T) {
+		// ingest some log lines
+		require.NoError(t, cliDistributor.PushLogLine("lineA", now.Add(-45*time.Minute), nil, map[string]string{"job": "one"}))
+		require.NoError(t, cliDistributor.PushLogLine("lineB", now.Add(-45*time.Minute), nil, map[string]string{"job": "one"}))
+
+		require.NoError(t, cliDistributor.PushLogLine("lineC", now, nil, map[string]string{"job": "one"}))
+		require.NoError(t, cliDistributor.PushLogLine("lineD", now, nil, map[string]string{"job": "two"}))
+	})
+
+	t.Run("query", func(t *testing.T) {
+		resp, err := cliQueryFrontend.RunQuery(context.Background(), `approx_topk(1, count_over_time({job=~".+"}[1h]))`)
+		require.NoError(t, err)
+		assert.Equal(t, "vector", resp.Data.ResultType)
+
+		var values []string
+		var labels []string
+		for _, value := range resp.Data.Vector {
+			values = append(values, value.Value)
+			labels = append(labels, value.Metric["job"])
+		}
+		assert.ElementsMatch(t, []string{"3"}, values)
+		assert.ElementsMatch(t, []string{"one"}, labels)
 	})
 }
 
@@ -1094,7 +1202,7 @@ func getValueFromMetricFamilyWithFunc[R any](mf *dto.MetricFamily, lbs *dto.Labe
 }
 
 func assertCacheState(t *testing.T, metrics string, e *expectedCacheState) {
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.UTF8Validation)
 	mfs, err := parser.TextToMetricFamilies(strings.NewReader(metrics))
 	require.NoError(t, err)
 

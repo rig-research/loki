@@ -53,7 +53,7 @@ func main() {
 	flag.Parse()
 
 	go func() {
-		log.Println(http.ListenAndServe("localhost:8080", nil))
+		log.Println(http.ListenAndServe("localhost:8080", nil)) //#nosec G114 -- This is only bound to localhost, not a plausible DOS vector.
 	}()
 
 	// Create a set of defaults
@@ -144,7 +144,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	nameLabelMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, "logs")
+	nameLabelMatcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "logs")
 	if err != nil {
 		log.Println("Failed to create label matcher:", err)
 		os.Exit(1)

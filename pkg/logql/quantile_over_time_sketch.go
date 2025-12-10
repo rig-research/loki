@@ -37,11 +37,11 @@ func (q ProbabilisticQuantileVector) Merge(right ProbabilisticQuantileVector) (P
 		streamHashPool.Put(groups)
 	}()
 	for i, sample := range q {
-		groups[sample.Metric.Hash()] = i
+		groups[labels.StableHash(sample.Metric)] = i
 	}
 
 	for _, sample := range right {
-		i, ok := groups[sample.Metric.Hash()]
+		i, ok := groups[labels.StableHash(sample.Metric)]
 		if !ok {
 			q = append(q, sample)
 			continue
@@ -62,6 +62,10 @@ func (ProbabilisticQuantileVector) SampleVector() promql.Vector {
 
 func (q ProbabilisticQuantileVector) QuantileSketchVec() ProbabilisticQuantileVector {
 	return q
+}
+
+func (ProbabilisticQuantileVector) CountMinSketchVec() CountMinSketchVector {
+	return CountMinSketchVector{}
 }
 
 func (q ProbabilisticQuantileVector) ToProto() *logproto.QuantileSketchVector {
@@ -181,6 +185,15 @@ func newQuantileSketchIterator(
 	it iter.PeekingSampleIterator,
 	selRange, step, start, end, offset int64,
 ) RangeVectorIterator {
+	// forces at least one step.
+	if step == 0 {
+		step = 1
+	}
+	if offset != 0 {
+		start = start - offset
+		end = end - offset
+	}
+
 	inner := &batchRangeVectorIterator{
 		iter:     it,
 		step:     step,
@@ -205,10 +218,10 @@ type ProbabilisticQuantileSample struct {
 }
 
 func (q ProbabilisticQuantileSample) ToProto() *logproto.QuantileSketchSample {
-	metric := make([]*logproto.LabelPair, len(q.Metric))
-	for i, m := range q.Metric {
-		metric[i] = &logproto.LabelPair{Name: m.Name, Value: m.Value}
-	}
+	metric := make([]*logproto.LabelPair, 0, q.Metric.Len())
+	q.Metric.Range(func(l labels.Label) {
+		metric = append(metric, &logproto.LabelPair{Name: l.Name, Value: l.Value})
+	})
 
 	sketch := q.F.ToProto()
 
@@ -225,14 +238,15 @@ func probabilisticQuantileSampleFromProto(proto *logproto.QuantileSketchSample) 
 		return ProbabilisticQuantileSample{}, err
 	}
 	out := ProbabilisticQuantileSample{
-		T:      proto.TimestampMs,
-		F:      s,
-		Metric: make(labels.Labels, len(proto.Metric)),
+		T: proto.TimestampMs,
+		F: s,
 	}
 
-	for i, p := range proto.Metric {
-		out.Metric[i] = labels.Label{Name: p.Name, Value: p.Value}
+	b := labels.NewScratchBuilder(len(proto.Metric))
+	for _, p := range proto.Metric {
+		b.Add(p.Name, p.Value)
 	}
+	out.Metric = b.Labels()
 
 	return out, nil
 }
@@ -265,8 +279,8 @@ func (r *quantileSketchBatchRangeVectorIterator) agg(samples []promql.FPoint) sk
 	return s
 }
 
-// MergeQuantileSketchVector joins the results from stepEvaluator into a ProbabilisticQuantileMatrix.
-func MergeQuantileSketchVector(next bool, r StepResult, stepEvaluator StepEvaluator, params Params) (promql_parser.Value, error) {
+// JoinQuantileSketchVector joins the results from stepEvaluator into a ProbabilisticQuantileMatrix.
+func JoinQuantileSketchVector(next bool, r StepResult, stepEvaluator StepEvaluator, params Params) (promql_parser.Value, error) {
 	vec := r.QuantileSketchVec()
 	if stepEvaluator.Error() != nil {
 		return nil, stepEvaluator.Error()
@@ -298,23 +312,20 @@ func MergeQuantileSketchVector(next bool, r StepResult, stepEvaluator StepEvalua
 // QuantileSketchMatrixStepEvaluator steps through a matrix of quantile sketch
 // vectors, ie t-digest or DDSketch structures per time step.
 type QuantileSketchMatrixStepEvaluator struct {
-	start, end, ts time.Time
-	step           time.Duration
-	m              ProbabilisticQuantileMatrix
+	end, ts time.Time
+	step    time.Duration
+	m       ProbabilisticQuantileMatrix
 }
 
 func NewQuantileSketchMatrixStepEvaluator(m ProbabilisticQuantileMatrix, params Params) *QuantileSketchMatrixStepEvaluator {
 	var (
-		start = params.Start()
-		end   = params.End()
-		step  = params.Step()
+		step = params.Step()
 	)
 	return &QuantileSketchMatrixStepEvaluator{
-		start: start,
-		end:   end,
-		ts:    start.Add(-step), // will be corrected on first Next() call
-		step:  step,
-		m:     m,
+		end:  params.End(),
+		ts:   params.Start().Add(-step), // will be corrected on first Next() call
+		step: step,
+		m:    m,
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"math"
 	"time"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/grafana/loki/v3/pkg/storage/types"
 	"github.com/grafana/loki/v3/pkg/util/httpreq"
 
@@ -42,6 +44,8 @@ import (
 	"github.com/grafana/loki/v3/pkg/util"
 	"github.com/grafana/loki/v3/pkg/util/deletion"
 )
+
+var tracer = otel.Tracer("pkg/storage")
 
 var (
 	indexTypeStats  = analytics.NewString("store_index_type")
@@ -198,14 +202,14 @@ func (s *LokiStore) init() error {
 		if err != nil {
 			return err
 		}
-		f, err := fetcher.New(s.chunksCache, s.chunksCacheL2, s.storeCfg.ChunkCacheStubs(), s.schemaCfg, chunkClient, s.storeCfg.L2ChunkCacheHandoff)
+		f, err := fetcher.New(s.chunksCache, s.chunksCacheL2, s.storeCfg.ChunkCacheStubs(), s.schemaCfg, chunkClient, s.storeCfg.L2ChunkCacheHandoff, s.storeCfg.SkipQueryWritebackOlderThan)
 		if err != nil {
 			return err
 		}
 
 		periodEndTime := config.DayTime{Time: math.MaxInt64}
 		if i < len(s.schemaCfg.Configs)-1 {
-			periodEndTime = config.DayTime{Time: s.schemaCfg.Configs[i+1].From.Time.Add(-time.Millisecond)}
+			periodEndTime = config.DayTime{Time: s.schemaCfg.Configs[i+1].From.Add(-time.Millisecond)}
 		}
 		w, idx, stop, err := s.storeForPeriod(p, p.GetIndexTableNumberRange(periodEndTime), chunkClient, f)
 		if err != nil {
@@ -228,21 +232,11 @@ func (s *LokiStore) chunkClientForPeriod(p config.PeriodConfig) (client.Client, 
 	if objectStoreType == "" {
 		objectStoreType = p.IndexType
 	}
+
+	component := "chunk-store-" + p.From.String()
 	chunkClientReg := prometheus.WrapRegistererWith(
-		prometheus.Labels{"component": "chunk-store-" + p.From.String()}, s.registerer)
-
-	var cc congestion.Controller
-	ccCfg := s.cfg.CongestionControl
-
-	if ccCfg.Enabled {
-		cc = s.congestionControllerFactory(
-			ccCfg,
-			s.logger,
-			congestion.NewMetrics(fmt.Sprintf("%s-%s", objectStoreType, p.From.String()), ccCfg),
-		)
-	}
-
-	chunks, err := NewChunkClient(objectStoreType, s.cfg, s.schemaCfg, cc, chunkClientReg, s.clientMetrics, s.logger)
+		prometheus.Labels{"component": component}, s.registerer)
+	chunks, err := NewChunkClient(objectStoreType, component, s.cfg, s.schemaCfg, p, chunkClientReg, s.clientMetrics, s.logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating object client")
 	}
@@ -265,14 +259,8 @@ func shouldUseIndexGatewayClient(cfg indexshipper.Config) bool {
 }
 
 func (s *LokiStore) storeForPeriod(p config.PeriodConfig, tableRange config.TableRange, chunkClient client.Client, f *fetcher.Fetcher) (stores.ChunkWriter, index.ReaderWriter, func(), error) {
-	indexClientReg := prometheus.WrapRegistererWith(
-		prometheus.Labels{
-			"component": fmt.Sprintf(
-				"index-store-%s-%s",
-				p.IndexType,
-				p.From.String(),
-			),
-		}, s.registerer)
+	component := fmt.Sprintf("index-store-%s-%s", p.IndexType, p.From.String())
+	indexClientReg := prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, s.registerer)
 	indexClientLogger := log.With(s.logger, "index-store", fmt.Sprintf("%s-%s", p.IndexType, p.From.String()))
 
 	if p.IndexType == types.TSDBType {
@@ -290,7 +278,7 @@ func (s *LokiStore) storeForPeriod(p config.PeriodConfig, tableRange config.Tabl
 			}, nil
 		}
 
-		objectClient, err := NewObjectClient(p.ObjectType, s.cfg, s.clientMetrics)
+		objectClient, err := NewObjectClient(p.ObjectType, component, s.cfg, s.clientMetrics)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -313,7 +301,7 @@ func (s *LokiStore) storeForPeriod(p config.PeriodConfig, tableRange config.Tabl
 			}, nil
 	}
 
-	idx, err := NewIndexClient(p, tableRange, s.cfg, s.schemaCfg, s.limits, s.clientMetrics, nil, indexClientReg, indexClientLogger, s.metricsNamespace)
+	idx, err := NewIndexClient(component, p, tableRange, s.cfg, s.schemaCfg, s.limits, s.clientMetrics, nil, indexClientReg, indexClientLogger, s.metricsNamespace)
 	if err != nil {
 		return nil, nil, nil, errors.Wrap(err, "error creating index client")
 	}
@@ -350,7 +338,7 @@ func decodeReq(req logql.QueryParams) ([]*labels.Matcher, model.Time, model.Time
 	}
 
 	matchers := expr.Matchers()
-	nameLabelMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, "logs")
+	nameLabelMatcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "logs")
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -460,7 +448,7 @@ func (s *LokiStore) SelectSeries(ctx context.Context, req logql.SelectLogParams)
 	// we allow this to select all series in the time range.
 	if req.Selector == "" {
 		from, through = util.RoundToMilliseconds(req.Start, req.End)
-		nameLabelMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, "logs")
+		nameLabelMatcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "logs")
 		if err != nil {
 			return nil, err
 		}
@@ -476,7 +464,7 @@ func (s *LokiStore) SelectSeries(ctx context.Context, req logql.SelectLogParams)
 			return nil, err
 		}
 	}
-	series, err := s.Store.GetSeries(ctx, userID, from, through, matchers...)
+	series, err := s.GetSeries(ctx, userID, from, through, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -556,23 +544,28 @@ func (s *LokiStore) SelectSamples(ctx context.Context, req logql.SelectSamplePar
 		return nil, err
 	}
 
-	extractor, err := expr.Extractor()
+	extractors, err := expr.Extractors()
 	if err != nil {
 		return nil, err
 	}
 
-	extractor, err = deletion.SetupExtractor(req, extractor)
-	if err != nil {
-		return nil, err
-	}
-
-	if s.extractorWrapper != nil && httpreq.ExtractHeader(ctx, httpreq.LokiDisablePipelineWrappersHeader) != "true" {
-		userID, err := tenant.TenantID(ctx)
+	for i, extractor := range extractors {
+		extractor, err = deletion.SetupExtractor(req, extractor)
 		if err != nil {
 			return nil, err
 		}
 
-		extractor = s.extractorWrapper.Wrap(ctx, extractor, req.Plan.String(), userID)
+		if s.extractorWrapper != nil &&
+			httpreq.ExtractHeader(ctx, httpreq.LokiDisablePipelineWrappersHeader) != "true" {
+			userID, err := tenant.TenantID(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			extractor = s.extractorWrapper.Wrap(ctx, extractor, req.Plan.String(), userID)
+		}
+
+		extractors[i] = extractor
 	}
 
 	var chunkFilterer chunk.Filterer
@@ -580,7 +573,18 @@ func (s *LokiStore) SelectSamples(ctx context.Context, req logql.SelectSamplePar
 		chunkFilterer = s.chunkFilterer.ForRequest(ctx)
 	}
 
-	return newSampleBatchIterator(ctx, s.schemaCfg, s.chunkMetrics, lazyChunks, s.cfg.MaxChunkBatchSize, matchers, extractor, req.Start, req.End, chunkFilterer)
+	return newSampleBatchIterator(
+		ctx,
+		s.schemaCfg,
+		s.chunkMetrics,
+		lazyChunks,
+		s.cfg.MaxChunkBatchSize,
+		matchers,
+		req.Start,
+		req.End,
+		chunkFilterer,
+		extractors...,
+	)
 }
 
 func (s *LokiStore) GetSchemaConfigs() []config.PeriodConfig {

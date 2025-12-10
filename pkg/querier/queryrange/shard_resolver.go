@@ -3,7 +3,7 @@ package queryrange
 import (
 	"context"
 	"fmt"
-	strings "strings"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -12,7 +12,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/loki/v3/pkg/logproto"
@@ -142,8 +141,8 @@ func getStatsForMatchers(
 }
 
 func (r *dynamicShardResolver) GetStats(e syntax.Expr) (stats.Stats, error) {
-	sp, ctx := opentracing.StartSpanFromContext(r.ctx, "dynamicShardResolver.GetStats")
-	defer sp.Finish()
+	ctx, sp := tracer.Start(r.ctx, "dynamicShardResolver.GetStats")
+	defer sp.End()
 
 	start := time.Now()
 
@@ -183,9 +182,10 @@ func (r *dynamicShardResolver) GetStats(e syntax.Expr) (stats.Stats, error) {
 }
 
 func (r *dynamicShardResolver) Shards(e syntax.Expr) (int, uint64, error) {
-	sp, ctx := opentracing.StartSpanFromContext(r.ctx, "dynamicShardResolver.Shards")
-	defer sp.Finish()
-	log := spanlogger.FromContext(ctx)
+	ctx, sp := tracer.Start(r.ctx, "dynamicShardResolver.Shards")
+	defer sp.End()
+
+	log := spanlogger.FromContext(ctx, r.logger)
 	defer log.Finish()
 
 	combined, err := r.GetStats(e)
@@ -201,7 +201,7 @@ func (r *dynamicShardResolver) Shards(e syntax.Expr) (int, uint64, error) {
 	maxBytesPerShard := validation.SmallestPositiveIntPerTenant(tenantIDs, r.limits.TSDBMaxBytesPerShard)
 	factor := sharding.GuessShardFactor(combined.Bytes, uint64(maxBytesPerShard), r.maxShards)
 
-	var bytesPerShard = combined.Bytes
+	bytesPerShard := combined.Bytes
 	if factor > 0 {
 		bytesPerShard = combined.Bytes / uint64(factor)
 	}
@@ -223,7 +223,7 @@ func (r *dynamicShardResolver) ShardingRanges(expr syntax.Expr, targetBytesPerSh
 	[]logproto.ChunkRefGroup,
 	error,
 ) {
-	log := spanlogger.FromContext(r.ctx)
+	log := spanlogger.FromContext(r.ctx, r.logger)
 
 	var (
 		adjustedFrom    = r.from
@@ -275,7 +275,6 @@ func (r *dynamicShardResolver) ShardingRanges(expr syntax.Expr, targetBytesPerSh
 		Query:               expr.String(),
 		TargetBytesPerShard: targetBytesPerShard,
 	})
-
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to get shards for expression, got %T: %+v", err, err)
 	}

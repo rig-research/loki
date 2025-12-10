@@ -1,7 +1,6 @@
 package promtail
 
 import (
-	"crypto/md5"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +8,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/sha3"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -130,12 +131,17 @@ func (p *Promtail) reloadConfig(cfg *config.Config) error {
 		return errConfigNotChange
 	}
 	newConf := cfg.String()
-	level.Info(p.logger).Log("msg", "Reloading configuration file", "md5sum", fmt.Sprintf("%x", md5.Sum([]byte(newConf))))
+	hash := sha3.Sum256([]byte(newConf))
+	level.Info(p.logger).Log("msg", "Reloading configuration file", "sha3sum", fmt.Sprintf("%x", hash))
 	if p.targetManagers != nil {
 		p.targetManagers.Stop()
 	}
 	if p.client != nil {
 		p.client.Stop()
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("error validating config: %w", err)
 	}
 
 	cfg.Setup(p.logger)
@@ -285,7 +291,7 @@ func (p *Promtail) reload() error {
 	cfg, err := p.newConfig()
 	if err != nil {
 		reloadFailTotal.Inc()
-		return fmt.Errorf("Error new Config: %w", err)
+		return fmt.Errorf("error new Config: %w", err)
 	}
 	err = p.reloadConfig(cfg)
 	if err != nil {

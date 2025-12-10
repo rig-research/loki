@@ -7,8 +7,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	configv1 "github.com/grafana/loki/operator/apis/config/v1"
-	lokiv1 "github.com/grafana/loki/operator/apis/loki/v1"
+	configv1 "github.com/grafana/loki/operator/api/config/v1"
+	lokiv1 "github.com/grafana/loki/operator/api/loki/v1"
 	"github.com/grafana/loki/operator/internal/manifests/storage"
 )
 
@@ -277,6 +277,8 @@ func TestGCSExtract(t *testing.T) {
 	type test struct {
 		name               string
 		secret             *corev1.Secret
+		tokenAuth          *corev1.Secret
+		featureGates       configv1.FeatureGates
 		wantError          string
 		wantCredentialMode lokiv1.CredentialMode
 	}
@@ -343,6 +345,45 @@ func TestGCSExtract(t *testing.T) {
 			},
 			wantCredentialMode: lokiv1.CredentialModeToken,
 		},
+		{
+			name: "invalid for token CCO",
+			featureGates: configv1.FeatureGates{
+				OpenShift: configv1.OpenShiftFeatureGates{
+					Enabled:         true,
+					TokenCCOAuthEnv: true,
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Data: map[string][]byte{
+					"bucketname": []byte("here"),
+					"key.json":   []byte("{\"type\": \"external_account\", \"audience\": \"\", \"service_account_id\": \"\"}"),
+				},
+			},
+			wantError: "gcp credentials file contains invalid fields: key.json must not be set for CredentialModeTokenCCO",
+		},
+		{
+			name: "valid for token CCO",
+			featureGates: configv1.FeatureGates{
+				OpenShift: configv1.OpenShiftFeatureGates{
+					Enabled:         true,
+					TokenCCOAuthEnv: true,
+				},
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Data: map[string][]byte{
+					"bucketname": []byte("here"),
+				},
+			},
+			tokenAuth: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "token-auth-config"},
+				Data: map[string][]byte{
+					"service_account.json": []byte("{\"type\": \"external_account\", \"audience\": \"test\", \"service_account_id\": \"\"}"),
+				},
+			},
+			wantCredentialMode: lokiv1.CredentialModeTokenCCO,
+		},
 	}
 	for _, tst := range table {
 		t.Run(tst.name, func(t *testing.T) {
@@ -352,7 +393,7 @@ func TestGCSExtract(t *testing.T) {
 				Type: lokiv1.ObjectStorageSecretGCS,
 			}
 
-			opts, err := extractSecrets(spec, tst.secret, nil, configv1.FeatureGates{})
+			opts, err := extractSecrets(spec, tst.secret, tst.tokenAuth, tst.featureGates)
 			if tst.wantError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tst.wantCredentialMode, opts.CredentialMode)
@@ -563,6 +604,34 @@ func TestS3Extract(t *testing.T) {
 			wantError: "scheme of S3 endpoint URL is unsupported: invalid",
 		},
 		{
+			name: "non-aws endpoint with path",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Data: map[string][]byte{
+					"endpoint":          []byte("https://s3.region.example.com/bucket"),
+					"region":            []byte("region"),
+					"bucketnames":       []byte("this,that"),
+					"access_key_id":     []byte("id"),
+					"access_key_secret": []byte("secret"),
+				},
+			},
+			wantError: "endpoint for S3 must not include a path: /bucket",
+		},
+		{
+			name: "aws endpoint with path",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Data: map[string][]byte{
+					"endpoint":          []byte("https://s3.region.amazonaws.com/bucket"),
+					"region":            []byte("region"),
+					"bucketnames":       []byte("this,that"),
+					"access_key_id":     []byte("id"),
+					"access_key_secret": []byte("secret"),
+				},
+			},
+			wantError: "endpoint for S3 must not include a path: /bucket",
+		},
+		{
 			name: "s3 region used in endpoint URL is incorrect",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
@@ -613,14 +682,15 @@ func TestS3Extract(t *testing.T) {
 	}
 }
 
-func TestS3Extract_S3ForcePathStyle(t *testing.T) {
+func TestS3Extract_ForcePathStyle(t *testing.T) {
 	tt := []struct {
 		desc        string
 		secret      *corev1.Secret
 		wantOptions *storage.S3StorageConfig
+		wantError   string
 	}{
 		{
-			desc: "aws s3 endpoint",
+			desc: "aws endpoint without forcepathstyle specified (default behavior)",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Data: map[string][]byte{
@@ -632,38 +702,81 @@ func TestS3Extract_S3ForcePathStyle(t *testing.T) {
 				},
 			},
 			wantOptions: &storage.S3StorageConfig{
-				Endpoint: "https://s3.region.amazonaws.com",
-				Region:   "region",
-				Buckets:  "this,that",
+				Endpoint:       "https://s3.region.amazonaws.com",
+				Region:         "region",
+				Buckets:        "this,that",
+				ForcePathStyle: false, // defaults to virtual style for AWS endpoints
 			},
 		},
 		{
-			desc: "non-aws s3 endpoint",
+			desc: "non-aws s3 endpoint without forcepathstyle specified (default behavior)",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Data: map[string][]byte{
-					"endpoint":          []byte("https://test.default.svc.cluster.local:9000"),
-					"region":            []byte("region"),
+					"endpoint":          []byte("http://minio:9000"),
+					"region":            []byte(""),
 					"bucketnames":       []byte("this,that"),
 					"access_key_id":     []byte("id"),
 					"access_key_secret": []byte("secret"),
 				},
 			},
 			wantOptions: &storage.S3StorageConfig{
-				Endpoint:       "https://test.default.svc.cluster.local:9000",
+				Endpoint:       "http://minio:9000",
+				Region:         "",
+				Buckets:        "this,that",
+				ForcePathStyle: true, // defaults to path style for non-AWS endpoints
+			},
+		},
+		{
+			desc: "aws s3 endpoint with forcepathstyle=true",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Data: map[string][]byte{
+					"endpoint":          []byte("https://s3.region.amazonaws.com"),
+					"region":            []byte("region"),
+					"bucketnames":       []byte("this,that"),
+					"access_key_id":     []byte("id"),
+					"access_key_secret": []byte("secret"),
+					"forcepathstyle":    []byte("true"),
+				},
+			},
+			wantOptions: &storage.S3StorageConfig{
+				Endpoint:       "https://s3.region.amazonaws.com",
 				Region:         "region",
 				Buckets:        "this,that",
 				ForcePathStyle: true,
 			},
 		},
+		{
+			desc: "invalid forcepathstyle value",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Data: map[string][]byte{
+					"endpoint":          []byte("https://s3.region.amazonaws.com"),
+					"region":            []byte("region"),
+					"bucketnames":       []byte("this,that"),
+					"access_key_id":     []byte("id"),
+					"access_key_secret": []byte("secret"),
+					"forcepathstyle":    []byte("yes"),
+				},
+			},
+			wantError: `forcepathstyle must be "true" or "false": yes`,
+		},
 	}
 
 	for _, tc := range tt {
 		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-			options, err := extractS3ConfigSecret(tc.secret, lokiv1.CredentialModeStatic)
-			require.NoError(t, err)
-			require.Equal(t, tc.wantOptions, options)
+			got, err := extractS3ConfigSecret(tc.secret, lokiv1.CredentialModeStatic)
+			if tc.wantError == "" {
+				require.NoError(t, err)
+
+				require.Equal(t, tc.wantOptions.ForcePathStyle, got.ForcePathStyle)
+				require.Equal(t, tc.wantOptions.Endpoint, got.Endpoint)
+				require.Equal(t, tc.wantOptions.Region, got.Region)
+				require.Equal(t, tc.wantOptions.Buckets, got.Buckets)
+			} else {
+				require.EqualError(t, err, tc.wantError)
+			}
 		})
 	}
 }

@@ -8,9 +8,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	lokiv1 "github.com/grafana/loki/operator/apis/loki/v1"
+	lokiv1 "github.com/grafana/loki/operator/api/loki/v1"
 	"github.com/grafana/loki/operator/internal/external/k8s"
 )
+
+// LokiStackStatusInfo holds all status information calculated during LokiStack reconciliation
+type LokiStackStatusInfo struct {
+	// DegradedError contains information about why the managed LokiStack has an invalid configuration.
+	DegradedError *DegradedError
+
+	// Storage contains the credential mode used for object storage access
+	Storage lokiv1.CredentialMode
+
+	// NetworkPolicies indicates which set of network policies has been deployed, if any
+	NetworkPolicies lokiv1.NetworkPolicyRuleSet
+}
 
 const (
 	messageReady                           = "All components ready"

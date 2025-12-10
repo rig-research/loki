@@ -88,7 +88,11 @@ validate_version_update "${new_chart_version}" "${current_chart_version}" "${lat
 
 if ${k_release}; then
   update_yaml_node "${values_file}" .loki.image.tag "${latest_loki_tag}"
+  update_yaml_node "${values_file}" .lokiCanary.image.tag "${latest_loki_tag}"
+
   update_yaml_node "${values_file}" .enterprise.image.tag "${latest_gel_tag}"
+  update_yaml_node "${values_file}" .enterprise.provisioner.image.tag "${latest_gel_tag}"
+
   update_yaml_node "${chart_file}" .appVersion "$(extract_k_version "${latest_loki_tag}")"
 fi
 
@@ -97,11 +101,11 @@ update_yaml_node "${chart_file}" .version "${new_chart_version}"
 if ${k_release}; then
   sed --in-place \
     --regexp-extended \
-    "s/(.*\<AUTOMATED_UPDATES_LOCATOR\>.*)/\1\n\n## ${new_chart_version}\n\n- \[CHANGE\] Changed version of Grafana Loki to ${latest_loki_tag}\n- \[CHANGE\] Changed version of Grafana Enterprise Logs to ${latest_gel_tag}/g" production/helm/loki/CHANGELOG.md
+    "s/## Unreleased/## Unreleased\n\n## ${new_chart_version}\n\n- \[CHANGE\] Changed version of Grafana Loki to ${latest_loki_tag}\n- \[CHANGE\] Changed version of Grafana Enterprise Logs to ${latest_gel_tag}/g" production/helm/loki/CHANGELOG.md
 else
   sed --in-place \
     --regexp-extended \
-    "s/(.*\<AUTOMATED_UPDATES_LOCATOR\>.*)/\1\n\n## ${new_chart_version}/g" production/helm/loki/CHANGELOG.md
+    "s/## Unreleased/## Unreleased\n\n## ${new_chart_version}/g" production/helm/loki/CHANGELOG.md
 fi
 
 make TTY='' helm-docs

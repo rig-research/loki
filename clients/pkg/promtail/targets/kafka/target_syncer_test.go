@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/loki/v3/clients/pkg/promtail/targets/testutils"
 
 	"github.com/grafana/loki/v3/clients/pkg/logentry/stages"
 	"github.com/grafana/loki/v3/clients/pkg/promtail/client/fake"
@@ -87,7 +89,7 @@ func Test_NewTarget(t *testing.T) {
 		client: fake.New(func() {}),
 		cfg: &TargetSyncerConfig{
 			GroupID: "group_1",
-			RelabelConfigs: []*relabel.Config{
+			RelabelConfigs: testutils.ValidateRelabelConfig(t, []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__meta_kafka_topic"},
 					TargetLabel:  "topic",
@@ -95,7 +97,7 @@ func Test_NewTarget(t *testing.T) {
 					Action:       relabel.Replace,
 					Regex:        relabel.MustNewRegexp("(.*)"),
 				},
-			},
+			}),
 			Labels: model.LabelSet{"static": "static1"},
 		},
 	}

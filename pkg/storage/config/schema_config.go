@@ -210,6 +210,15 @@ func (d *DayTime) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
+func (d *DayTime) Set(value string) error {
+	t, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return err
+	}
+	d.Time = model.TimeFromUnix(t.Unix())
+	return nil
+}
+
 func (d DayTime) String() string {
 	return d.Time.Time().UTC().Format("2006-01-02")
 }
@@ -269,6 +278,13 @@ type SchemaConfig struct {
 	fileName string
 }
 
+func (cfg *SchemaConfig) Clone() SchemaConfig {
+	clone := *cfg
+	clone.Configs = make([]PeriodConfig, len(cfg.Configs))
+	copy(clone.Configs, cfg.Configs)
+	return clone
+}
+
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *SchemaConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.fileName, "schema-config-file", "", "The path to the schema config file. The schema config is used only when running Cortex with the chunks storage.")
@@ -318,7 +334,7 @@ func (cfg *SchemaConfig) Validate() error {
 		}
 
 		if i+1 < len(cfg.Configs) {
-			if cfg.Configs[i].From.Time.Unix() >= cfg.Configs[i+1].From.Time.Unix() {
+			if cfg.Configs[i].From.Unix() >= cfg.Configs[i+1].From.Unix() {
 				return errSchemaIncreasingFromTime
 			}
 		}
@@ -560,6 +576,7 @@ func (cfg IndexPeriodicTableConfig) MarshalYAML() (interface{}, error) {
 
 	return g, nil
 }
+
 func ValidatePathPrefix(prefix string) error {
 	if prefix == "" {
 		return errors.New("prefix must be set")
@@ -776,7 +793,7 @@ func GetIndexStoreTableRanges(indexType string, periodicConfigs []PeriodConfig) 
 
 		periodEndTime := DayTime{Time: math.MaxInt64}
 		if i < len(periodicConfigs)-1 {
-			periodEndTime = DayTime{Time: periodicConfigs[i+1].From.Time.Add(-time.Millisecond)}
+			periodEndTime = DayTime{Time: periodicConfigs[i+1].From.Add(-time.Millisecond)}
 		}
 
 		ranges = append(ranges, periodicConfigs[i].GetIndexTableNumberRange(periodEndTime))

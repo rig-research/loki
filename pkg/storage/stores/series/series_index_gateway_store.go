@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
+	statscontext "github.com/grafana/loki/v3/pkg/logqlmodel/stats"
 	"github.com/grafana/loki/v3/pkg/storage/chunk"
 	"github.com/grafana/loki/v3/pkg/storage/stores/index/stats"
 	"github.com/grafana/loki/v3/pkg/storage/stores/shipper/indexshipper/tsdb/sharding"
@@ -58,7 +59,14 @@ func (c *IndexGatewayClientStore) GetChunkRefs(ctx context.Context, _ string, fr
 		result[i] = *ref
 	}
 
+	statsCtx := statscontext.FromContext(ctx)
+	statsCtx.MergeIndex(response.Stats)
+
 	return result, nil
+}
+
+func (c *IndexGatewayClientStore) GetChunkRefsWithSizingInfo(_ context.Context, _ string, _, _ model.Time, _ chunk.Predicate) ([]logproto.ChunkRefWithSizingInfo, error) {
+	panic("store does not support getting chunk refs with sizing info")
 }
 
 func (c *IndexGatewayClientStore) GetSeries(ctx context.Context, _ string, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
@@ -126,23 +134,13 @@ func (c *IndexGatewayClientStore) Volume(ctx context.Context, _ string, from, th
 	})
 }
 
-func (c *IndexGatewayClientStore) GetShards(
-	ctx context.Context,
-	_ string,
-	from, through model.Time,
-	targetBytesPerShard uint64,
-	predicate chunk.Predicate,
-) (*logproto.ShardsResponse, error) {
-	resp, err := c.client.GetShards(ctx, &logproto.ShardsRequest{
+func (c *IndexGatewayClientStore) GetShards(ctx context.Context, _ string, from, through model.Time, targetBytesPerShard uint64, predicate chunk.Predicate) (*logproto.ShardsResponse, error) {
+	return c.client.GetShards(ctx, &logproto.ShardsRequest{
 		From:                from,
 		Through:             through,
 		Query:               predicate.Plan().AST.String(),
 		TargetBytesPerShard: targetBytesPerShard,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
 }
 
 func (c *IndexGatewayClientStore) SetChunkFilterer(_ chunk.RequestChunkFilterer) {
@@ -158,4 +156,8 @@ func (c *IndexGatewayClientStore) IndexChunk(_ context.Context, _, _ model.Time,
 // called during the `GetShards() invocation`
 func (c *IndexGatewayClientStore) HasForSeries(_, _ model.Time) (sharding.ForSeries, bool) {
 	return nil, false
+}
+
+func (c *IndexGatewayClientStore) HasChunkSizingInfo(_, _ model.Time) bool {
+	return false
 }

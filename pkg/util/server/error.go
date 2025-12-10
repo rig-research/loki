@@ -23,9 +23,15 @@ import (
 const StatusClientClosedRequest = 499
 
 const (
-	ErrClientCanceled   = "The request was cancelled by the client."
-	ErrDeadlineExceeded = "Request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed."
+	ErrClientCanceled   = "the request was cancelled by the client"
+	ErrDeadlineExceeded = "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed"
 )
+
+type UserError string
+
+func (e UserError) Error() string {
+	return string(e)
+}
 
 func ClientGrpcStatusAndError(err error) error {
 	if err == nil {
@@ -55,6 +61,7 @@ func ClientHTTPStatusAndError(err error) (int, error) {
 	var (
 		queryErr storage_errors.QueryError
 		promErr  promql.ErrStorage
+		userErr  UserError
 	)
 
 	me, ok := err.(util.MultiError)
@@ -63,6 +70,24 @@ func ClientHTTPStatusAndError(err error) (int, error) {
 	}
 	if ok && me.IsDeadlineExceeded() {
 		return http.StatusGatewayTimeout, errors.New(ErrDeadlineExceeded)
+	}
+
+	// Return 400 if any of the errors in the MultiError are client errors (4xx)
+	if ok {
+		for _, e := range me {
+			if errors.As(e, &queryErr) ||
+				errors.Is(e, logqlmodel.ErrLimit) ||
+				errors.Is(e, logqlmodel.ErrParse) ||
+				errors.Is(e, logqlmodel.ErrPipeline) ||
+				errors.Is(e, logqlmodel.ErrBlocked) ||
+				errors.Is(e, logqlmodel.ErrParseMatchers) ||
+				errors.Is(e, logqlmodel.ErrUnsupportedSyntaxForInstantQuery) ||
+				errors.Is(e, user.ErrNoOrgID) ||
+				errors.As(e, &userErr) ||
+				errors.Is(e, logqlmodel.ErrVariantsDisabled) {
+				return http.StatusBadRequest, err
+			}
+		}
 	}
 
 	if s, isRPC := status.FromError(err); isRPC {
@@ -83,6 +108,7 @@ func ClientHTTPStatusAndError(err error) (int, error) {
 	case errors.As(err, &queryErr):
 		return http.StatusBadRequest, err
 	case errors.Is(err, logqlmodel.ErrLimit) ||
+		errors.Is(err, logqlmodel.ErrIntervalLimit) ||
 		errors.Is(err, logqlmodel.ErrParse) ||
 		errors.Is(err, logqlmodel.ErrPipeline) ||
 		errors.Is(err, logqlmodel.ErrBlocked) ||
@@ -90,6 +116,10 @@ func ClientHTTPStatusAndError(err error) (int, error) {
 		errors.Is(err, logqlmodel.ErrUnsupportedSyntaxForInstantQuery):
 		return http.StatusBadRequest, err
 	case errors.Is(err, user.ErrNoOrgID):
+		return http.StatusBadRequest, err
+	case errors.As(err, &userErr):
+		return http.StatusBadRequest, err
+	case errors.Is(err, logqlmodel.ErrVariantsDisabled):
 		return http.StatusBadRequest, err
 	default:
 		if grpcErr, ok := httpgrpc.HTTPResponseFromError(err); ok {

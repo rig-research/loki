@@ -36,8 +36,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                                  then [utils.selector.re('job', '($namespace)/(distributor|%s-write|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
                                  else [utils.selector.re('job', '($namespace)/%s' % (if $._config.ssd.enabled then '%s-write' % $._config.ssd.pod_prefix_matcher else 'distributor'))],
                                  ingester: if $._config.meta_monitoring.enabled
-                                 then [utils.selector.re('job', '($namespace)/(ingester|%s-write|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
-                                 else [utils.selector.re('job', '($namespace)/%s' % (if $._config.ssd.enabled then '%s-write' % $._config.ssd.pod_prefix_matcher else 'ingester.*'))],
+                                 then [utils.selector.re('job', '($namespace)/(partition-ingester.*|ingester.*|%s-write|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
+                                 else [utils.selector.re('job', '($namespace)/%s' % (if $._config.ssd.enabled then '%s-write' % $._config.ssd.pod_prefix_matcher else '(ingester.*|partition-ingester.*)'))],
                                  querier: if $._config.meta_monitoring.enabled
                                  then [utils.selector.re('job', '($namespace)/(querier|%s-read|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
                                  else [utils.selector.re('job', '($namespace)/%s' % (if $._config.ssd.enabled then '%s-read' % $._config.ssd.pod_prefix_matcher else 'querier'))],
@@ -53,8 +53,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                                  then [utils.selector.re('pod', '(distributor|%s-write|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
                                  else [utils.selector.re('pod', '%s' % (if $._config.ssd.enabled then '%s-write.*' % $._config.ssd.pod_prefix_matcher else 'distributor.*'))],
                                  ingester: if $._config.meta_monitoring.enabled
-                                 then [utils.selector.re('pod', '(ingester|%s-write|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
-                                 else [utils.selector.re('pod', '%s' % (if $._config.ssd.enabled then '%s-write.*' % $._config.ssd.pod_prefix_matcher else 'ingester.*'))],
+                                 then [utils.selector.re('pod', '(partition-ingester.*|ingester.*|%s-write|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
+                                 else [utils.selector.re('pod', '%s' % (if $._config.ssd.enabled then '%s-write.*' % $._config.ssd.pod_prefix_matcher else '(ingester.*|partition-ingester.*)'))],
                                  querier: if $._config.meta_monitoring.enabled
                                  then [utils.selector.re('pod', '(querier|%s-read|loki-single-binary)' % $._config.ssd.pod_prefix_matcher)]
                                  else [utils.selector.re('pod', '%s' % (if $._config.ssd.enabled then '%s-read.*' % $._config.ssd.pod_prefix_matcher else 'querier.*'))],
@@ -121,7 +121,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                                    std.strReplace(
                                      std.strReplace(
                                        expr,
-                                       'pod=~"backend.*"',
+                                       $._config.per_instance_label + '=~"backend.*"',
                                        matcherStr('backend', matcher='pod', sep='')
                                      ),
                                      'job="$namespace/backend",',
@@ -136,7 +136,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                                    std.strReplace(
                                      std.strReplace(
                                        expr,
-                                       'pod=~"querier.*"',
+                                       $._config.per_instance_label + '=~"querier.*"',
                                        matcherStr('querier', matcher='pod', sep='')
                                      ),
                                      'job="$namespace/querier",',
@@ -160,10 +160,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
                                                      std.strReplace(
                                                        std.strReplace(
                                                          expr,
-                                                         'pod=~"ingester.*"',
+                                                         $._config.per_instance_label + '=~"ingester.*"',
                                                          matcherStr('ingester', matcher='pod', sep='')
                                                        ),
-                                                       'pod=~"distributor.*"',
+                                                       $._config.per_instance_label + '=~"distributor.*"',
                                                        matcherStr('distributor', matcher='pod', sep='')
                                                      ),
                                                      'job="$namespace/cortex-gw",',
