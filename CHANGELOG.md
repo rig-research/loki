@@ -1,4 +1,4 @@
-# Changelog
+# Changelog 
 
 ## [3.1.1](https://github.com/grafana/loki/compare/v3.1.0...v3.1.1) (2024-08-08)
 
